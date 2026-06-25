@@ -1,3 +1,5 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Tabs } from "expo-router";
 
 import { colors } from "../../theme/colors";
@@ -21,6 +23,9 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Dashboard",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="grid-outline" size={size} color={color} />
+          ),
         }}
       />
 
@@ -29,6 +34,9 @@ export default function TabsLayout() {
         options={{
           title: "Members",
           headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-outline" size={size} color={color} />
+          ),
         }}
       />
 
@@ -36,6 +44,9 @@ export default function TabsLayout() {
         name="events"
         options={{
           title: "Events",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
         }}
       />
 
@@ -43,6 +54,9 @@ export default function TabsLayout() {
         name="trains"
         options={{
           title: "Trains",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="train" size={size} color={color} />
+          ),
         }}
       />
     </Tabs>
