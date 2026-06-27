@@ -46,13 +46,7 @@ export type TrainAssignment = {
 export type DailyMemberStat = {
   id: string;
   memberId: string;
-
-  /**
-   * Local date key.
-   * Example: "2026-06-27"
-   */
-  date: string;
-
+  date: string; // "2026-06-27"
   weeklyVs: number;
   donations: number;
 };

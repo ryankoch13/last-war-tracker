@@ -108,12 +108,6 @@ export function MemberDetailScreen() {
           <Info label="Power" value={formatCompactNumber(member.power)} />
           <Info label="HQ Level" value={member.hqLevel.toString()} />
         </View>
-
-        <View style={styles.grid}>
-          <Info label="VS Total" value={formatCompactNumber(totalVs)} />
-          <Info label="Donations" value={formatNumber(totalDonations)} />
-        </View>
-
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Daily History</Text>
 
@@ -133,6 +127,12 @@ export function MemberDetailScreen() {
             ))
           )}
         </View>
+        <View style={styles.card}>
+          <Text style={styles.username}>{member.username}</Text>
+          <Text style={styles.meta}>
+            {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
+          </Text>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>R4 Notes</Text>
@@ -140,7 +140,17 @@ export function MemberDetailScreen() {
             {member.notes?.trim() || "No notes yet."}
           </Text>
         </View>
-
+        <AppButton
+          title="Update Daily Stats"
+          onPress={() =>
+            router.push({
+              pathname: "/members/stats",
+              params: {
+                memberId: member.id,
+              },
+            })
+          }
+        />
         <AppButton
           title="Edit Member"
           onPress={() =>

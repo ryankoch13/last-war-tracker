@@ -55,6 +55,13 @@ export default function MembersLayout() {
       />
 
       <Stack.Screen
+        name="stats"
+        options={{
+          title: "Daily Stats",
+        }}
+      />
+
+      <Stack.Screen
         name="edit"
         options={{
           title: "Edit Member",

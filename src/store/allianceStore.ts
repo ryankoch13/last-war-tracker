@@ -130,16 +130,17 @@ export const useAllianceStore = create<AllianceState>()(
             };
           }
 
-          const newStat: DailyMemberStat = {
-            id: createId("daily-stat"),
-            memberId,
-            date,
-            weeklyVs: updates.weeklyVs ?? 0,
-            donations: updates.donations ?? 0,
-          };
-
           return {
-            dailyStats: [...state.dailyStats, newStat],
+            dailyStats: [
+              ...state.dailyStats,
+              {
+                id: createId("daily-stat"),
+                memberId,
+                date,
+                weeklyVs: updates.weeklyVs ?? 0,
+                donations: updates.donations ?? 0,
+              },
+            ],
           };
         });
       },
