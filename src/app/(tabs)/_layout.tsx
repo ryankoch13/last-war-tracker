@@ -52,9 +52,9 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),
+          headerShown: false,
         }}
       />
-
       <Tabs.Screen
         name="events"
         options={{
