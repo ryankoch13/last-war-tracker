@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { AppButton } from "../components/AppButton";
+import { TopMemberStatsCard } from "@/components/TopMemberStatsCards";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
@@ -11,9 +11,6 @@ export function DashboardScreen() {
   const members = useAllianceStore((state) => state.members);
   const events = useAllianceStore((state) => state.events);
   const trains = useAllianceStore((state) => state.trains);
-  const loadDemoData = useAllianceStore((state) => state.loadDemoData);
-  const clearAllData = useAllianceStore((state) => state.clearAllData);
-
   const topVsMember = useMemo(() => {
     return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
   }, [members]);
@@ -38,17 +35,9 @@ export function DashboardScreen() {
           Roster, train, and event management for strategy game alliances.
         </Text>
       </View>
-
-      <View style={styles.actions}>
-        <AppButton title="Load Demo Alliance" onPress={loadDemoData} />
-        <AppButton title="Clear" variant="secondary" onPress={clearAllData} />
-      </View>
-
-      <View style={styles.grid}>
-        <StatCard label="Members" value={members.length} />
-        <StatCard label="Total Power" value={formatCompactNumber(totalPower)} />
-      </View>
-
+      <ScrollView contentContainerStyle={styles.container}>
+        <TopMemberStatsCard />
+      </ScrollView>
       <View style={styles.grid}>
         <StatCard
           label="Top VS"

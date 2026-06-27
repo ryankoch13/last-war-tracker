@@ -4,9 +4,10 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { demoEvents, demoMembers, demoTrains } from "../data/demoAlliance";
 import type {
-    AllianceEvent,
-    AllianceMember,
-    TrainAssignment,
+  AllianceEvent,
+  AllianceMember,
+  DailyMemberStat,
+  TrainAssignment,
 } from "../types/alliance";
 import { createId } from "../utils/createId";
 
@@ -14,6 +15,7 @@ type AllianceState = {
   members: AllianceMember[];
   events: AllianceEvent[];
   trains: TrainAssignment[];
+  dailyStats: DailyMemberStat[];
 
   loadDemoData: () => void;
   clearAllData: () => void;
@@ -22,7 +24,16 @@ type AllianceState = {
   updateMember: (memberId: string, updates: Partial<AllianceMember>) => void;
   deleteMember: (memberId: string) => void;
 
+  upsertDailyStat: (
+    memberId: string,
+    date: string,
+    updates: Partial<Pick<DailyMemberStat, "weeklyVs" | "donations">>,
+  ) => void;
+
+  deleteDailyStat: (statId: string) => void;
+
   getMemberById: (memberId: string) => AllianceMember | undefined;
+  getDailyStatsByMemberId: (memberId: string) => DailyMemberStat[];
 };
 
 export const useAllianceStore = create<AllianceState>()(
@@ -31,12 +42,14 @@ export const useAllianceStore = create<AllianceState>()(
       members: [],
       events: [],
       trains: [],
+      dailyStats: [],
 
       loadDemoData: () => {
         set({
           members: demoMembers,
           events: demoEvents,
           trains: demoTrains,
+          dailyStats: [],
         });
       },
 
@@ -45,6 +58,7 @@ export const useAllianceStore = create<AllianceState>()(
           members: [],
           events: [],
           trains: [],
+          dailyStats: [],
         });
       },
 
@@ -75,12 +89,18 @@ export const useAllianceStore = create<AllianceState>()(
       deleteMember: (memberId) => {
         set((state) => ({
           members: state.members.filter((member) => member.id !== memberId),
+
+          dailyStats: state.dailyStats.filter(
+            (stat) => stat.memberId !== memberId,
+          ),
+
           events: state.events.map((event) => ({
             ...event,
             assignedMemberIds: event.assignedMemberIds.filter(
               (id) => id !== memberId,
             ),
           })),
+
           trains: state.trains.map((train) => ({
             ...train,
             conductorId:
@@ -91,13 +111,78 @@ export const useAllianceStore = create<AllianceState>()(
         }));
       },
 
+      upsertDailyStat: (memberId, date, updates) => {
+        set((state) => {
+          const existingStat = state.dailyStats.find(
+            (stat) => stat.memberId === memberId && stat.date === date,
+          );
+
+          if (existingStat) {
+            return {
+              dailyStats: state.dailyStats.map((stat) =>
+                stat.id === existingStat.id
+                  ? {
+                      ...stat,
+                      ...updates,
+                    }
+                  : stat,
+              ),
+            };
+          }
+
+          const newStat: DailyMemberStat = {
+            id: createId("daily-stat"),
+            memberId,
+            date,
+            weeklyVs: updates.weeklyVs ?? 0,
+            donations: updates.donations ?? 0,
+          };
+
+          return {
+            dailyStats: [...state.dailyStats, newStat],
+          };
+        });
+      },
+
+      deleteDailyStat: (statId) => {
+        set((state) => ({
+          dailyStats: state.dailyStats.filter((stat) => stat.id !== statId),
+        }));
+      },
+
       getMemberById: (memberId) => {
         return get().members.find((member) => member.id === memberId);
+      },
+
+      getDailyStatsByMemberId: (memberId) => {
+        return get()
+          .dailyStats.filter((stat) => stat.memberId === memberId)
+          .sort((a, b) => b.date.localeCompare(a.date));
       },
     }),
     {
       name: "alliance-ops-store",
       storage: createJSONStorage(() => AsyncStorage),
+
+      version: 2,
+
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<AllianceState>;
+
+        return {
+          members: state.members ?? [],
+          events: state.events ?? [],
+          trains: state.trains ?? [],
+          dailyStats: state.dailyStats ?? [],
+        };
+      },
+
+      partialize: (state) => ({
+        members: state.members,
+        events: state.events,
+        trains: state.trains,
+        dailyStats: state.dailyStats,
+      }),
     },
   ),
 );
