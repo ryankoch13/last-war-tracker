@@ -33,14 +33,20 @@ export type AllianceEvent = {
   assignedMemberIds: string[];
 };
 
+export type TrainAssignmentStatus = "active" | "completed";
+
 export type TrainAssignment = {
   id: string;
-  trainName: string;
-  departureTime: string;
+  name: string;
+  date: string; // "2026-06-27"
+  status: TrainAssignmentStatus;
+
   conductorId?: string;
   guardIds: string[];
   passengerIds: string[];
+
   notes?: string;
+  completedAt?: string;
 };
 
 export type DailyMemberStat = {
