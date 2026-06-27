@@ -42,3 +42,20 @@ export type TrainAssignment = {
   passengerIds: string[];
   notes?: string;
 };
+
+export type DailyMemberStat = {
+  id: string;
+  memberId: string;
+  date: string; // "2026-06-27"
+  weeklyVs: number;
+  donations: number;
+};
+
+export type StatMetric = "weeklyVs" | "donations";
+export type StatRange = "week" | "month";
+
+export type TopMemberStat = {
+  memberId: string;
+  memberName: string;
+  total: number;
+};
