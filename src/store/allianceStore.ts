@@ -42,6 +42,22 @@ type AllianceState = {
   completeTrainAssignment: (trainId: string) => void;
   reopenTrainAssignment: (trainId: string) => void;
   deleteTrainAssignment: (trainId: string) => void;
+  addAllianceEvent: (event: {
+    name: string;
+    type: AllianceEvent["type"];
+    date: string;
+    notes?: string;
+    assignedMemberIds?: string[];
+  }) => void;
+
+  updateAllianceEvent: (
+    eventId: string,
+    updates: Partial<AllianceEvent>,
+  ) => void;
+
+  completeAllianceEvent: (eventId: string) => void;
+  reopenAllianceEvent: (eventId: string) => void;
+  deleteAllianceEvent: (eventId: string) => void;
 };
 
 export const useAllianceStore = create<AllianceState>()(
@@ -234,7 +250,73 @@ export const useAllianceStore = create<AllianceState>()(
           trains: state.trains.filter((train) => train.id !== trainId),
         }));
       },
+      addAllianceEvent: (event) => {
+        set((state) => ({
+          events: [
+            ...state.events,
+            {
+              id: createId("event"),
+              name: event.name,
+              type: event.type,
+              date: event.date,
+              notes: event.notes,
+              assignedMemberIds: event.assignedMemberIds ?? [],
+              status: "active",
+            },
+          ],
+        }));
+      },
+
+      updateAllianceEvent: (eventId, updates) => {
+        set((state) => ({
+          events: state.events.map((event) =>
+            event.id === eventId
+              ? {
+                  ...event,
+                  ...updates,
+                }
+              : event,
+          ),
+        }));
+      },
+
+      completeAllianceEvent: (eventId) => {
+        const today = new Date().toISOString().slice(0, 10);
+
+        set((state) => ({
+          events: state.events.map((event) =>
+            event.id === eventId
+              ? {
+                  ...event,
+                  status: "completed",
+                  completedAt: today,
+                }
+              : event,
+          ),
+        }));
+      },
+
+      reopenAllianceEvent: (eventId) => {
+        set((state) => ({
+          events: state.events.map((event) =>
+            event.id === eventId
+              ? {
+                  ...event,
+                  status: "active",
+                  completedAt: undefined,
+                }
+              : event,
+          ),
+        }));
+      },
+
+      deleteAllianceEvent: (eventId) => {
+        set((state) => ({
+          events: state.events.filter((event) => event.id !== eventId),
+        }));
+      },
     }),
+
     {
       name: "alliance-ops-store",
       storage: createJSONStorage(() => AsyncStorage),

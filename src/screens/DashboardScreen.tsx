@@ -60,10 +60,10 @@ export function DashboardScreen() {
 
         {nextEvent ? (
           <View style={styles.panel}>
-            <Text style={styles.panelTitle}>{nextEvent.title}</Text>
+            <Text style={styles.panelTitle}>{nextEvent.name}</Text>
             <Text style={styles.panelText}>{nextEvent.type}</Text>
             <Text style={styles.panelText}>
-              Starts {formatDateTime(nextEvent.startsAt)}
+              Starts {formatDateTime(nextEvent.date)}
             </Text>
           </View>
         ) : (
@@ -77,9 +77,9 @@ export function DashboardScreen() {
         {trains.length > 0 ? (
           trains.map((train) => (
             <View key={train.id} style={styles.panel}>
-              <Text style={styles.panelTitle}>{train.trainName}</Text>
+              <Text style={styles.panelTitle}>{train.name}</Text>
               <Text style={styles.panelText}>
-                Departure: {formatDateTime(train.departureTime)}
+                Departure: {formatDateTime(train.date)}
               </Text>
               <Text style={styles.panelText}>
                 Assigned: {train.guardIds.length + train.passengerIds.length}

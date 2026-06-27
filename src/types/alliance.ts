@@ -16,21 +16,25 @@ export type AllianceMember = {
   notes?: string;
 };
 
+export type AllianceEventStatus = "active" | "completed";
+
 export type AllianceEventType =
+  | "VS"
   | "Desert Storm"
-  | "Alliance Duel"
   | "Capital War"
+  | "Rare Soil"
   | "Train"
-  | "Rare Soil War"
   | "Custom";
 
 export type AllianceEvent = {
   id: string;
-  title: string;
+  name: string;
   type: AllianceEventType;
-  startsAt: string;
-  description?: string;
+  date: string; // "2026-06-27"
+  status: AllianceEventStatus;
   assignedMemberIds: string[];
+  notes?: string;
+  completedAt?: string;
 };
 
 export type TrainAssignmentStatus = "active" | "completed";
