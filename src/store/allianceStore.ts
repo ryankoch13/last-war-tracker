@@ -34,6 +34,14 @@ type AllianceState = {
 
   getMemberById: (memberId: string) => AllianceMember | undefined;
   getDailyStatsByMemberId: (memberId: string) => DailyMemberStat[];
+  addTrainAssignment: () => void;
+  updateTrainAssignment: (
+    trainId: string,
+    updates: Partial<TrainAssignment>,
+  ) => void;
+  completeTrainAssignment: (trainId: string) => void;
+  reopenTrainAssignment: (trainId: string) => void;
+  deleteTrainAssignment: (trainId: string) => void;
 };
 
 export const useAllianceStore = create<AllianceState>()(
@@ -159,6 +167,72 @@ export const useAllianceStore = create<AllianceState>()(
         return get()
           .dailyStats.filter((stat) => stat.memberId === memberId)
           .sort((a, b) => b.date.localeCompare(a.date));
+      },
+      addTrainAssignment: () => {
+        const today = new Date().toISOString().slice(0, 10);
+
+        set((state) => ({
+          trains: [
+            ...state.trains,
+            {
+              id: createId("train"),
+              name: `Train ${state.trains.length + 1}`,
+              date: today,
+              status: "active",
+              guardIds: [],
+              passengerIds: [],
+            },
+          ],
+        }));
+      },
+
+      updateTrainAssignment: (trainId, updates) => {
+        set((state) => ({
+          trains: state.trains.map((train) =>
+            train.id === trainId
+              ? {
+                  ...train,
+                  ...updates,
+                }
+              : train,
+          ),
+        }));
+      },
+
+      completeTrainAssignment: (trainId) => {
+        const today = new Date().toISOString().slice(0, 10);
+
+        set((state) => ({
+          trains: state.trains.map((train) =>
+            train.id === trainId
+              ? {
+                  ...train,
+                  status: "completed",
+                  completedAt: today,
+                }
+              : train,
+          ),
+        }));
+      },
+
+      reopenTrainAssignment: (trainId) => {
+        set((state) => ({
+          trains: state.trains.map((train) =>
+            train.id === trainId
+              ? {
+                  ...train,
+                  status: "active",
+                  completedAt: undefined,
+                }
+              : train,
+          ),
+        }));
+      },
+
+      deleteTrainAssignment: (trainId) => {
+        set((state) => ({
+          trains: state.trains.filter((train) => train.id !== trainId),
+        }));
       },
     }),
     {
