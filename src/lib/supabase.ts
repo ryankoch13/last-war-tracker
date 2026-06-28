@@ -8,7 +8,8 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables");
 }
-
+console.log("Supabase URL:", supabaseUrl);
+console.log("Supabase Anon Key:", supabaseAnonKey);
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: AsyncStorage,

@@ -45,7 +45,17 @@ export default function AllianceSetupScreen() {
       Alert.alert("Missing alliance ID", "Enter the alliance ID.");
       return;
     }
+    function getErrorMessage(err: unknown) {
+      if (err instanceof Error) {
+        return err.message;
+      }
 
+      if (typeof err === "object" && err !== null) {
+        return JSON.stringify(err, null, 2);
+      }
+
+      return String(err);
+    }
     try {
       setSaving(true);
 
@@ -63,10 +73,9 @@ export default function AllianceSetupScreen() {
 
       router.replace("/");
     } catch (err) {
-      Alert.alert(
-        "Could not finish setup",
-        err instanceof Error ? err.message : "Something went wrong.",
-      );
+      console.log("ALLIANCE SETUP ERROR:", err);
+
+      Alert.alert("Could not finish setup", getErrorMessage(err));
     } finally {
       setSaving(false);
     }

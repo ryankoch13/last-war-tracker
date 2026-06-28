@@ -1,12 +1,61 @@
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { AllianceEvent, getAllianceEvents } from "@/lib/allianceEvents";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import { formatDateTime } from "../../utils/format";
 
 export function EventListScreen() {
-  const events = useAllianceStore((state) => state.events);
+  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+
+  const [events, setEvents] = useState<AllianceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      async function loadEvents() {
+        if (!activeAllianceId) {
+          setEvents([]);
+          setLoading(false);
+          return;
+        }
+
+        try {
+          setLoading(true);
+
+          const results = await getAllianceEvents(activeAllianceId);
+
+          if (isActive) {
+            setEvents(results);
+          }
+        } catch (error) {
+          console.error("Failed to load events", error);
+        } finally {
+          if (isActive) {
+            setLoading(false);
+          }
+        }
+      }
+
+      loadEvents();
+
+      return () => {
+        isActive = false;
+      };
+    }, [activeAllianceId]),
+  );
 
   return (
     <RequireActiveAlliance>
@@ -15,11 +64,23 @@ export function EventListScreen() {
         contentContainerStyle={styles.content}
         data={events}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          <Pressable
+            onPress={() => router.push("/events/create")}
+            style={styles.createButton}
+          >
+            <Text style={styles.createButtonText}>+ Create Event</Text>
+          </Pressable>
+        }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            No events yet. This screen will eventually handle Desert Storm,
-            Alliance Duel, Capital War, and custom reminders.
-          </Text>
+          loading ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={styles.empty}>
+              No events yet. Create one for Desert Storm, Alliance Duel, Capital
+              War, or custom reminders.
+            </Text>
+          )
         }
         renderItem={({ item }) => (
           <View style={styles.card}>
@@ -28,9 +89,11 @@ export function EventListScreen() {
             <Text style={styles.meta}>
               Starts {formatDateTime(item.startsAt)}
             </Text>
+
             {!!item.description && (
               <Text style={styles.description}>{item.description}</Text>
             )}
+
             <Text style={styles.assigned}>
               Assigned members: {item.assignedMemberIds.length}
             </Text>
@@ -80,5 +143,17 @@ const styles = StyleSheet.create({
   empty: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  createButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  createButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
 });

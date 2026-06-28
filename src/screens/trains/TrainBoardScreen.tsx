@@ -1,6 +1,7 @@
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { router } from "expo-router";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import { formatDateTime } from "../../utils/format";
@@ -18,6 +19,12 @@ export function TrainBoardScreen() {
 
   return (
     <RequireActiveAlliance>
+      <Pressable
+        onPress={() => router.push("/trains/create")}
+        style={styles.createButton}
+      >
+        <Text style={styles.createButtonText}>+ Create Train</Text>
+      </Pressable>
       <FlatList
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -116,5 +123,18 @@ const styles = StyleSheet.create({
   empty: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  createButton: {
+    backgroundColor: "#7c3aed",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  createButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
 });
