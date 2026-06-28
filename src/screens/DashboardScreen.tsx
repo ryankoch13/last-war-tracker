@@ -2,18 +2,19 @@ import { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { AppButton } from "../components/AppButton";
+import { getAllianceEvents } from "@/lib/allianceEvents";
+import { getTrainAssignments } from "@/lib/trains";
+import { getAllianceMembers } from "@/services/allianceMembers";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
 import { formatCompactNumber, formatDateTime } from "../utils/format";
 
 export function DashboardScreen() {
-  const members = useAllianceStore((state) => state.members);
-  const events = useAllianceStore((state) => state.events);
-  const trains = useAllianceStore((state) => state.trains);
-  const loadDemoData = useAllianceStore((state) => state.loadDemoData);
-  const clearAllData = useAllianceStore((state) => state.clearAllData);
+  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+  const trains = getTrainAssignments(activeAllianceId || "");
+  const events = getAllianceEvents(activeAllianceId || "");
+  const members = getAllianceMembers(activeAllianceId || "");
 
   const topVsMember = useMemo(() => {
     return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
@@ -43,11 +44,11 @@ export function DashboardScreen() {
             Roster, train, and event management for strategy game alliances.
           </Text>
         </View>
-
+        {/* 
         <View style={styles.actions}>
           <AppButton title="Load Demo Alliance" onPress={loadDemoData} />
           <AppButton title="Clear" variant="secondary" onPress={clearAllData} />
-        </View>
+        </View> */}
 
         <View style={styles.grid}>
           <StatCard label="Members" value={members.length} />

@@ -6,10 +6,16 @@ type CreateAllianceInput = {
   memberName: string;
 };
 
-type JoinAllianceInput = {
-  allianceId: string;
-  memberName: string;
-};
+function generateInviteCode(length = 8) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+
+  for (let i = 0; i < length; i += 1) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+
+  return code;
+}
 
 export async function createAllianceAndMember({
   allianceName,
@@ -26,6 +32,7 @@ export async function createAllianceAndMember({
     .insert({
       name: allianceName.trim(),
       created_by: user.id,
+      invite_code: generateInviteCode(),
     })
     .select("*")
     .single();
@@ -74,8 +81,13 @@ export async function createAllianceAndMember({
   };
 }
 
+type JoinAllianceInput = {
+  inviteCode: string;
+  memberName: string;
+};
+
 export async function joinAllianceAndClaimMember({
-  allianceId,
+  inviteCode,
   memberName,
 }: JoinAllianceInput) {
   const user = await getCurrentSupabaseUser();
@@ -84,13 +96,13 @@ export async function joinAllianceAndClaimMember({
     throw new Error("You must be signed in to join an alliance.");
   }
 
-  const cleanAllianceId = allianceId.trim();
+  const cleanInviteCode = inviteCode.trim().toUpperCase();
   const cleanMemberName = memberName.trim();
 
   const { data: alliance, error: allianceError } = await supabase
     .from("alliances")
     .select("*")
-    .eq("id", cleanAllianceId)
+    .eq("invite_code", cleanInviteCode)
     .maybeSingle();
 
   if (allianceError) {
@@ -98,30 +110,13 @@ export async function joinAllianceAndClaimMember({
   }
 
   if (!alliance) {
-    throw new Error("Alliance not found.");
-  }
-
-  const { error: allianceUserError } = await supabase
-    .from("alliance_users")
-    .upsert(
-      {
-        alliance_id: cleanAllianceId,
-        user_id: user.id,
-        role: "member",
-      },
-      {
-        onConflict: "alliance_id,user_id",
-      },
-    );
-
-  if (allianceUserError) {
-    throw allianceUserError;
+    throw new Error("Alliance not found. Check the invite code.");
   }
 
   const { data: existingMember, error: existingMemberError } = await supabase
     .from("members")
     .select("*")
-    .eq("alliance_id", cleanAllianceId)
+    .eq("alliance_id", alliance.id)
     .ilike("name", cleanMemberName)
     .maybeSingle();
 
@@ -156,7 +151,7 @@ export async function joinAllianceAndClaimMember({
   const { data: member, error: memberError } = await supabase
     .from("members")
     .insert({
-      alliance_id: cleanAllianceId,
+      alliance_id: alliance.id,
       user_id: user.id,
       name: cleanMemberName,
       role: "Member",

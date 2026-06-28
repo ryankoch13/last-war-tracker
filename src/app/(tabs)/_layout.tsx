@@ -1,11 +1,22 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Redirect, Stack, Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { Redirect, router, Tabs } from "expo-router";
+import { ActivityIndicator, Pressable, View } from "react-native";
 
-import { useActiveAlliance } from "@/hooks/useActiveAlliance";
-import { useAuthSession } from "@/hooks/useAuthSession";
-import { ActivityIndicator, View } from "react-native";
+import { useActiveAlliance } from "../../hooks/useActiveAlliance";
+import { useAuthSession } from "../../hooks/useAuthSession";
 import { colors } from "../../theme/colors";
+
+function SettingsHeaderButton() {
+  return (
+    <Pressable
+      onPress={() => router.push("/settings")}
+      hitSlop={12}
+      style={{ paddingHorizontal: 12 }}
+    >
+      <Ionicons name="settings-outline" size={24} color="#111827" />
+    </Pressable>
+  );
+}
 
 export default function TabsLayout() {
   const { loading: authLoading, isSignedIn } = useAuthSession();
@@ -18,9 +29,11 @@ export default function TabsLayout() {
       </View>
     );
   }
+
   if (!isSignedIn) {
     return <Redirect href="/sign-in" />;
   }
+
   if (!hasActiveAlliance) {
     return <Redirect href="/alliance-setup" />;
   }
@@ -36,6 +49,7 @@ export default function TabsLayout() {
           color: colors.text,
           fontWeight: "800",
         },
+        headerRight: () => <SettingsHeaderButton />,
       }}
     >
       <Tabs.Screen
@@ -58,27 +72,7 @@ export default function TabsLayout() {
           ),
         }}
       />
-
       <Tabs.Screen
-        name="events"
-        options={{
-          title: "Events",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="trains"
-        options={{
-          title: "Trains",
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="train" size={size} color={color} />
-          ),
-        }}
-      />
-      <Stack.Screen
         name="stats"
         options={{
           title: "My Stats",

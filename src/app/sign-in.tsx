@@ -122,6 +122,12 @@ export default function SignInScreen() {
         <Pressable onPress={handleSignUp} disabled={saving}>
           <Text style={styles.linkText}>Create an account</Text>
         </Pressable>
+        <Pressable
+          onPress={() => router.push("/forgot-password")}
+          disabled={saving}
+        >
+          <Text style={styles.linkText}>Forgot your password?</Text>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );

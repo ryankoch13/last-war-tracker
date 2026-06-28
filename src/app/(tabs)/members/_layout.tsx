@@ -39,12 +39,6 @@ export default function MembersLayout() {
           presentation: "modal",
         }}
       />
-      <Stack.Screen
-        name="stats"
-        options={{
-          title: "My Stats",
-        }}
-      />
     </Stack>
   );
 }
