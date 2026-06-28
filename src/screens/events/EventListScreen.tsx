@@ -1,5 +1,6 @@
 import { FlatList, StyleSheet, Text, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import { formatDateTime } from "../../utils/format";
@@ -8,33 +9,35 @@ export function EventListScreen() {
   const events = useAllianceStore((state) => state.events);
 
   return (
-    <FlatList
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      data={events}
-      keyExtractor={(item) => item.id}
-      ListEmptyComponent={
-        <Text style={styles.empty}>
-          No events yet. This screen will eventually handle Desert Storm,
-          Alliance Duel, Capital War, and custom reminders.
-        </Text>
-      }
-      renderItem={({ item }) => (
-        <View style={styles.card}>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.meta}>{item.type}</Text>
-          <Text style={styles.meta}>
-            Starts {formatDateTime(item.startsAt)}
+    <RequireActiveAlliance>
+      <FlatList
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        data={events}
+        keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            No events yet. This screen will eventually handle Desert Storm,
+            Alliance Duel, Capital War, and custom reminders.
           </Text>
-          {!!item.description && (
-            <Text style={styles.description}>{item.description}</Text>
-          )}
-          <Text style={styles.assigned}>
-            Assigned members: {item.assignedMemberIds.length}
-          </Text>
-        </View>
-      )}
-    />
+        }
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.title}>{item.title}</Text>
+            <Text style={styles.meta}>{item.type}</Text>
+            <Text style={styles.meta}>
+              Starts {formatDateTime(item.startsAt)}
+            </Text>
+            {!!item.description && (
+              <Text style={styles.description}>{item.description}</Text>
+            )}
+            <Text style={styles.assigned}>
+              Assigned members: {item.assignedMemberIds.length}
+            </Text>
+          </View>
+        )}
+      />
+    </RequireActiveAlliance>
   );
 }
 

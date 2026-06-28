@@ -1,10 +1,29 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Tabs } from "expo-router";
+import { Redirect, Stack, Tabs } from "expo-router";
 
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
+import { useAuthSession } from "@/hooks/useAuthSession";
+import { ActivityIndicator, View } from "react-native";
 import { colors } from "../../theme/colors";
 
 export default function TabsLayout() {
+  const { loading: authLoading, isSignedIn } = useAuthSession();
+  const { loading: allianceLoading, hasActiveAlliance } = useActiveAlliance();
+
+  if (authLoading || allianceLoading) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+  if (!isSignedIn) {
+    return <Redirect href="/sign-in" />;
+  }
+  if (!hasActiveAlliance) {
+    return <Redirect href="/alliance-setup" />;
+  }
   return (
     <Tabs
       screenOptions={{
@@ -57,6 +76,12 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="train" size={size} color={color} />
           ),
+        }}
+      />
+      <Stack.Screen
+        name="stats"
+        options={{
+          title: "My Stats",
         }}
       />
     </Tabs>

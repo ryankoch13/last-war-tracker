@@ -1,5 +1,6 @@
 import { FlatList, StyleSheet, Text, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import { formatDateTime } from "../../utils/format";
@@ -16,50 +17,55 @@ export function TrainBoardScreen() {
   }
 
   return (
-    <FlatList
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      data={trains}
-      keyExtractor={(item) => item.id}
-      ListEmptyComponent={
-        <Text style={styles.empty}>
-          No trains yet. This will become your alliance train assignment board.
-        </Text>
-      }
-      renderItem={({ item }) => (
-        <View style={styles.card}>
-          <Text style={styles.title}>{item.trainName}</Text>
-          <Text style={styles.meta}>
-            Departure: {formatDateTime(item.departureTime)}
+    <RequireActiveAlliance>
+      <FlatList
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        data={trains}
+        keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            No trains yet. This will become your alliance train assignment
+            board.
           </Text>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Conductor</Text>
-            <Text style={styles.value}>{getMemberName(item.conductorId)}</Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Guards</Text>
-            <Text style={styles.value}>
-              {item.guardIds.length
-                ? item.guardIds.map(getMemberName).join(", ")
-                : "None assigned"}
+        }
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.title}>{item.trainName}</Text>
+            <Text style={styles.meta}>
+              Departure: {formatDateTime(item.departureTime)}
             </Text>
-          </View>
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Passengers</Text>
-            <Text style={styles.value}>
-              {item.passengerIds.length
-                ? item.passengerIds.map(getMemberName).join(", ")
-                : "None assigned"}
-            </Text>
-          </View>
+            <View style={styles.section}>
+              <Text style={styles.label}>Conductor</Text>
+              <Text style={styles.value}>
+                {getMemberName(item.conductorId)}
+              </Text>
+            </View>
 
-          {!!item.notes && <Text style={styles.notes}>{item.notes}</Text>}
-        </View>
-      )}
-    />
+            <View style={styles.section}>
+              <Text style={styles.label}>Guards</Text>
+              <Text style={styles.value}>
+                {item.guardIds.length
+                  ? item.guardIds.map(getMemberName).join(", ")
+                  : "None assigned"}
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Passengers</Text>
+              <Text style={styles.value}>
+                {item.passengerIds.length
+                  ? item.passengerIds.map(getMemberName).join(", ")
+                  : "None assigned"}
+              </Text>
+            </View>
+
+            {!!item.notes && <Text style={styles.notes}>{item.notes}</Text>}
+          </View>
+        )}
+      />
+    </RequireActiveAlliance>
   );
 }
 
