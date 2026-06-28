@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { AppButton } from "../../components/AppButton";
 import { MemberCard } from "../../components/MemberCard";
 import { useAllianceStore } from "../../store/allianceStore";
@@ -29,39 +30,41 @@ export function MemberListScreen() {
   }, [members, query]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search members, rank, squad..."
-          placeholderTextColor={colors.muted}
-          style={styles.search}
-        />
-
-        <AppButton title="Add" onPress={() => router.push("/members/edit")} />
-      </View>
-
-      <FlatList
-        data={filteredMembers}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No members yet</Text>
-            <Text style={styles.emptyText}>
-              Load demo data from the Dashboard or add your first member.
-            </Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <MemberCard
-            member={item}
-            onPress={() => router.push(`/members/${item.id}`)}
+    <RequireActiveAlliance>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search members, rank, squad..."
+            placeholderTextColor={colors.muted}
+            style={styles.search}
           />
-        )}
-      />
-    </View>
+
+          <AppButton title="Add" onPress={() => router.push("/members/edit")} />
+        </View>
+
+        <FlatList
+          data={filteredMembers}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No members yet</Text>
+              <Text style={styles.emptyText}>
+                Load demo data from the Dashboard or add your first member.
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <MemberCard
+              member={item}
+              onPress={() => router.push(`/members/${item.id}`)}
+            />
+          )}
+        />
+      </View>
+    </RequireActiveAlliance>
   );
 }
 

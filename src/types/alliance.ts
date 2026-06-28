@@ -5,6 +5,7 @@ export type SquadType = "Tank" | "Air" | "Missile" | "Mixed";
 export type AllianceMember = {
   id: string;
   username: string;
+  alliance_id: string;
   rank: AllianceRank;
   power: number;
   hqLevel: number;
@@ -14,6 +15,12 @@ export type AllianceMember = {
   weeklyVsScore: number;
   weeklyDonations: number;
   notes?: string;
+};
+
+export type ActiveAllianceState = {
+  userId: string | null;
+  member: AllianceMember | null;
+  activeAllianceId: string | null;
 };
 
 export type AllianceEventType =

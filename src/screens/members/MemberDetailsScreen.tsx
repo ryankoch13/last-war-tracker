@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
@@ -45,52 +46,72 @@ export function MemberDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.card}>
-        <Text style={styles.username}>{member.username}</Text>
-        <Text style={styles.meta}>
-          {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
-        </Text>
-      </View>
+    <RequireActiveAlliance>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View style={styles.card}>
+          <Text style={styles.username}>{member.username}</Text>
+          <Text style={styles.meta}>
+            {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
+          </Text>
+        </View>
 
-      <View style={styles.grid}>
-        <Info label="Power" value={formatCompactNumber(member.power)} />
-        <Info label="HQ Level" value={member.hqLevel.toString()} />
-      </View>
+        <View style={styles.grid}>
+          <Info label="Power" value={formatCompactNumber(member.power)} />
+          <Info label="HQ Level" value={member.hqLevel.toString()} />
+        </View>
 
-      <View style={styles.grid}>
-        <Info
-          label="Weekly VS"
-          value={formatCompactNumber(member.weeklyVsScore)}
+        <View style={styles.grid}>
+          <Info
+            label="Weekly VS"
+            value={formatCompactNumber(member.weeklyVsScore)}
+          />
+          <Info
+            label="Donations"
+            value={formatNumber(member.weeklyDonations)}
+          />
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>R4 Notes</Text>
+          <Text style={styles.notes}>
+            {member.notes?.trim() || "No notes yet."}
+          </Text>
+        </View>
+
+        <AppButton
+          title="View Stats"
+          onPress={() =>
+            router.push({
+              pathname: "../members/stats",
+              params: {
+                memberId: member.id,
+              },
+            })
+          }
         />
-        <Info label="Donations" value={formatNumber(member.weeklyDonations)} />
-      </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>R4 Notes</Text>
-        <Text style={styles.notes}>
-          {member.notes?.trim() || "No notes yet."}
-        </Text>
-      </View>
+        <AppButton
+          title="Edit Member"
+          onPress={() =>
+            router.push({
+              pathname: "/members/edit",
+              params: {
+                memberId: member.id,
+              },
+            })
+          }
+        />
 
-      <AppButton
-        title="Edit Member"
-        onPress={() =>
-          router.push({
-            pathname: "/members/edit",
-            params: {
-              memberId: member.id,
-            },
-          })
-        }
-      />
-
-      <AppButton
-        title="Delete Member"
-        variant="danger"
-        onPress={confirmDelete}
-      />
-    </ScrollView>
+        <AppButton
+          title="Delete Member"
+          variant="danger"
+          onPress={confirmDelete}
+        />
+      </ScrollView>
+    </RequireActiveAlliance>
   );
 }
 

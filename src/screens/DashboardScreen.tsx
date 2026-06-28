@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { AppButton } from "../components/AppButton";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
@@ -31,77 +32,85 @@ export function DashboardScreen() {
   const totalPower = members.reduce((sum, member) => sum + member.power, 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View>
-        <Text style={styles.title}>Alliance Ops</Text>
-        <Text style={styles.subtitle}>
-          Roster, train, and event management for strategy game alliances.
-        </Text>
-      </View>
+    <RequireActiveAlliance>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View>
+          <Text style={styles.title}>Alliance Ops</Text>
+          <Text style={styles.subtitle}>
+            Roster, train, and event management for strategy game alliances.
+          </Text>
+        </View>
 
-      <View style={styles.actions}>
-        <AppButton title="Load Demo Alliance" onPress={loadDemoData} />
-        <AppButton title="Clear" variant="secondary" onPress={clearAllData} />
-      </View>
+        <View style={styles.actions}>
+          <AppButton title="Load Demo Alliance" onPress={loadDemoData} />
+          <AppButton title="Clear" variant="secondary" onPress={clearAllData} />
+        </View>
 
-      <View style={styles.grid}>
-        <StatCard label="Members" value={members.length} />
-        <StatCard label="Total Power" value={formatCompactNumber(totalPower)} />
-      </View>
+        <View style={styles.grid}>
+          <StatCard label="Members" value={members.length} />
+          <StatCard
+            label="Total Power"
+            value={formatCompactNumber(totalPower)}
+          />
+        </View>
 
-      <View style={styles.grid}>
-        <StatCard
-          label="Top VS"
-          value={topVsMember?.username ?? "—"}
-          helper={
-            topVsMember
-              ? formatCompactNumber(topVsMember.weeklyVsScore)
-              : "Load demo data"
-          }
-        />
-        <StatCard
-          label="Low Donations"
-          value={lowDonationMembers.length}
-          helper="Under 30k this week"
-        />
-      </View>
+        <View style={styles.grid}>
+          <StatCard
+            label="Top VS"
+            value={topVsMember?.username ?? "—"}
+            helper={
+              topVsMember
+                ? formatCompactNumber(topVsMember.weeklyVsScore)
+                : "Load demo data"
+            }
+          />
+          <StatCard
+            label="Low Donations"
+            value={lowDonationMembers.length}
+            helper="Under 30k this week"
+          />
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Next Event</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Next Event</Text>
 
-        {nextEvent ? (
-          <View style={styles.panel}>
-            <Text style={styles.panelTitle}>{nextEvent.title}</Text>
-            <Text style={styles.panelText}>{nextEvent.type}</Text>
-            <Text style={styles.panelText}>
-              Starts {formatDateTime(nextEvent.startsAt)}
-            </Text>
-          </View>
-        ) : (
-          <Text style={styles.emptyText}>No upcoming events yet.</Text>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Train Snapshot</Text>
-
-        {trains.length > 0 ? (
-          trains.map((train) => (
-            <View key={train.id} style={styles.panel}>
-              <Text style={styles.panelTitle}>{train.trainName}</Text>
+          {nextEvent ? (
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>{nextEvent.title}</Text>
+              <Text style={styles.panelText}>{nextEvent.type}</Text>
               <Text style={styles.panelText}>
-                Departure: {formatDateTime(train.departureTime)}
-              </Text>
-              <Text style={styles.panelText}>
-                Assigned: {train.guardIds.length + train.passengerIds.length}
+                Starts {formatDateTime(nextEvent.startsAt)}
               </Text>
             </View>
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No train assignments yet.</Text>
-        )}
-      </View>
-    </ScrollView>
+          ) : (
+            <Text style={styles.emptyText}>No upcoming events yet.</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Train Snapshot</Text>
+
+          {trains.length > 0 ? (
+            trains.map((train) => (
+              <View key={train.id} style={styles.panel}>
+                <Text style={styles.panelTitle}>{train.trainName}</Text>
+                <Text style={styles.panelText}>
+                  Departure: {formatDateTime(train.departureTime)}
+                </Text>
+                <Text style={styles.panelText}>
+                  Assigned: {train.guardIds.length + train.passengerIds.length}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No train assignments yet.</Text>
+          )}
+        </View>
+      </ScrollView>
+    </RequireActiveAlliance>
   );
 }
 
