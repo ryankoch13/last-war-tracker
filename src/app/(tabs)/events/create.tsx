@@ -13,8 +13,8 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useActiveAllianceId } from "@/hooks/useAllianceStore";
 import { createAllianceEvent } from "@/lib/allianceEvents";
-import { useAllianceStore } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
 const eventTypes = [
@@ -27,7 +27,7 @@ const eventTypes = [
 ];
 
 export default function CreateEventRoute() {
-  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+  const activeAllianceId = useActiveAllianceId();
 
   const [title, setTitle] = useState("");
   const [type, setType] = useState("Custom");

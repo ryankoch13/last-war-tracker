@@ -14,6 +14,7 @@ import {
     View,
 } from "react-native";
 
+import { colors } from "@/theme/colors";
 import { supabase } from "../lib/supabase";
 
 const RESET_REDIRECT_URL = "lastwartracker://reset-password";
@@ -77,6 +78,7 @@ export default function ForgotPasswordScreen() {
           autoCorrect={false}
           keyboardType="email-address"
           style={styles.input}
+          placeholderTextColor={colors.muted}
         />
 
         <Pressable

@@ -12,16 +12,42 @@ import {
   View,
 } from "react-native";
 
+import { colors } from "@/theme/colors";
 import { supabase } from "../lib/supabase";
 
+type AuthMode = "sign-in" | "sign-up";
+
 export default function SignInScreen() {
+  const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function handleSignIn() {
-    if (!email.trim() || !password.trim()) {
+  const isSignUp = mode === "sign-up";
+
+  function getCleanEmail() {
+    return email.trim().toLowerCase();
+  }
+
+  function validateAuthFields() {
+    if (!getCleanEmail() || !password.trim()) {
       Alert.alert("Missing info", "Enter your email and password.");
+      return false;
+    }
+
+    if (isSignUp && password.length < 6) {
+      Alert.alert(
+        "Password too short",
+        "Your password should be at least 6 characters.",
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleSignIn() {
+    if (!validateAuthFields()) {
       return;
     }
 
@@ -29,7 +55,7 @@ export default function SignInScreen() {
       setSaving(true);
 
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: getCleanEmail(),
         password,
       });
 
@@ -49,8 +75,7 @@ export default function SignInScreen() {
   }
 
   async function handleSignUp() {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert("Missing info", "Enter your email and password.");
+    if (!validateAuthFields()) {
       return;
     }
 
@@ -58,7 +83,7 @@ export default function SignInScreen() {
       setSaving(true);
 
       const { error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: getCleanEmail(),
         password,
       });
 
@@ -68,8 +93,10 @@ export default function SignInScreen() {
 
       Alert.alert(
         "Account created",
-        "Check your email if confirmation is enabled, then sign in.",
+        "Check your email to confirm your account, then come back and sign in.",
       );
+
+      setMode("sign-in");
     } catch (err) {
       Alert.alert(
         "Could not create account",
@@ -80,6 +107,52 @@ export default function SignInScreen() {
     }
   }
 
+  async function handleResendConfirmation() {
+    const cleanEmail = getCleanEmail();
+
+    if (!cleanEmail) {
+      Alert.alert("Missing email", "Enter your email first.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: cleanEmail,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      Alert.alert(
+        "Confirmation sent",
+        "Check your email for a new confirmation link.",
+      );
+    } catch (err) {
+      Alert.alert(
+        "Could not resend confirmation",
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePrimaryAction() {
+    if (isSignUp) {
+      await handleSignUp();
+    } else {
+      await handleSignIn();
+    }
+  }
+
+  function toggleMode() {
+    setMode(isSignUp ? "sign-in" : "sign-up");
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -87,7 +160,11 @@ export default function SignInScreen() {
     >
       <View style={styles.card}>
         <Text style={styles.title}>Last War Tracker</Text>
-        <Text style={styles.subtitle}>Sign in to sync your alliance data.</Text>
+        <Text style={styles.subtitle}>
+          {isSignUp
+            ? "Create an account to start tracking alliance data."
+            : "Sign in to sync your alliance data."}
+        </Text>
 
         <TextInput
           value={email}
@@ -97,6 +174,7 @@ export default function SignInScreen() {
           autoCorrect={false}
           keyboardType="email-address"
           style={styles.input}
+          placeholderTextColor={colors.muted}
         />
 
         <TextInput
@@ -105,29 +183,45 @@ export default function SignInScreen() {
           placeholder="Password"
           secureTextEntry
           style={styles.input}
+          placeholderTextColor={colors.muted}
         />
 
         <Pressable
-          onPress={handleSignIn}
+          onPress={handlePrimaryAction}
           disabled={saving}
           style={[styles.button, saving && styles.disabledButton]}
         >
           {saving ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
+            <Text style={styles.buttonText}>
+              {isSignUp ? "Create Account" : "Sign In"}
+            </Text>
           )}
         </Pressable>
 
-        <Pressable onPress={handleSignUp} disabled={saving}>
-          <Text style={styles.linkText}>Create an account</Text>
+        <Pressable onPress={toggleMode} disabled={saving}>
+          <Text style={styles.linkText}>
+            {isSignUp
+              ? "Already have an account? Sign in"
+              : "Need an account? Create one"}
+          </Text>
         </Pressable>
-        <Pressable
-          onPress={() => router.push("/forgot-password")}
-          disabled={saving}
-        >
-          <Text style={styles.linkText}>Forgot your password?</Text>
-        </Pressable>
+
+        {isSignUp ? (
+          <Pressable onPress={handleResendConfirmation} disabled={saving}>
+            <Text style={styles.linkText}>Resend confirmation email</Text>
+          </Pressable>
+        ) : null}
+
+        {!isSignUp ? (
+          <Pressable
+            onPress={() => router.push("/forgot-password")}
+            disabled={saving}
+          >
+            <Text style={styles.linkText}>Forgot your password?</Text>
+          </Pressable>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -138,6 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     padding: 20,
+    backgroundColor: "#f8fafc",
   },
   card: {
     borderWidth: 1,
@@ -145,17 +240,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     gap: 12,
+    backgroundColor: "white",
   },
   title: {
     fontSize: 28,
     fontWeight: "800",
     textAlign: "center",
+    color: "#111827",
   },
   subtitle: {
     fontSize: 15,
     opacity: 0.65,
     textAlign: "center",
     marginBottom: 8,
+    color: "#111827",
   },
   input: {
     borderWidth: 1,
@@ -164,6 +262,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
+    color: "#111827",
+    backgroundColor: "white",
   },
   button: {
     backgroundColor: "#6d28d9",

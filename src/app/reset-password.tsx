@@ -14,6 +14,7 @@ import {
     View,
 } from "react-native";
 
+import { colors } from "@/theme/colors";
 import { supabase } from "../lib/supabase";
 
 export default function ResetPasswordScreen() {
@@ -82,6 +83,7 @@ export default function ResetPasswordScreen() {
           placeholder="New password"
           secureTextEntry
           style={styles.input}
+          placeholderTextColor={colors.muted}
         />
 
         <TextInput
@@ -90,6 +92,7 @@ export default function ResetPasswordScreen() {
           placeholder="Confirm new password"
           secureTextEntry
           style={styles.input}
+          placeholderTextColor={colors.muted}
         />
 
         <Pressable

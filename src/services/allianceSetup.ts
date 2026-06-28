@@ -1,11 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { getCurrentSupabaseUser } from "./auth";
 
-type CreateAllianceInput = {
-  allianceName: string;
-  memberName: string;
-};
-
 function generateInviteCode(length = 8) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -17,20 +12,31 @@ function generateInviteCode(length = 8) {
   return code;
 }
 
-export async function createAllianceAndMember({
-  allianceName,
-  memberName,
-}: CreateAllianceInput) {
+export async function createAllianceAndMember(
+  allianceName: string,
+  memberName: string,
+) {
   const user = await getCurrentSupabaseUser();
 
   if (!user) {
     throw new Error("You must be signed in to create an alliance.");
   }
 
+  const cleanAllianceName = allianceName.trim();
+  const cleanMemberName = memberName.trim();
+
+  if (!cleanAllianceName) {
+    throw new Error("Alliance name is required.");
+  }
+
+  if (!cleanMemberName) {
+    throw new Error("Member name is required.");
+  }
+
   const { data: alliance, error: allianceError } = await supabase
     .from("alliances")
     .insert({
-      name: allianceName.trim(),
+      name: cleanAllianceName,
       created_by: user.id,
       invite_code: generateInviteCode(),
     })
@@ -63,8 +69,8 @@ export async function createAllianceAndMember({
     .insert({
       alliance_id: alliance.id,
       user_id: user.id,
-      name: memberName.trim(),
-      role: "R5",
+      name: cleanMemberName,
+      role: "owner",
       power: 0,
       level: null,
     })
@@ -81,15 +87,10 @@ export async function createAllianceAndMember({
   };
 }
 
-type JoinAllianceInput = {
-  inviteCode: string;
-  memberName: string;
-};
-
-export async function joinAllianceAndClaimMember({
-  inviteCode,
-  memberName,
-}: JoinAllianceInput) {
+export async function joinAllianceAndClaimMember(
+  inviteCode: string,
+  memberName: string,
+) {
   const user = await getCurrentSupabaseUser();
 
   if (!user) {
@@ -98,6 +99,14 @@ export async function joinAllianceAndClaimMember({
 
   const cleanInviteCode = inviteCode.trim().toUpperCase();
   const cleanMemberName = memberName.trim();
+
+  if (!cleanInviteCode) {
+    throw new Error("Invite code is required.");
+  }
+
+  if (!cleanMemberName) {
+    throw new Error("Member name is required.");
+  }
 
   const { data: alliance, error: allianceError } = await supabase
     .from("alliances")
@@ -111,6 +120,23 @@ export async function joinAllianceAndClaimMember({
 
   if (!alliance) {
     throw new Error("Alliance not found. Check the invite code.");
+  }
+
+  const { error: allianceUserError } = await supabase
+    .from("alliance_users")
+    .upsert(
+      {
+        alliance_id: alliance.id,
+        user_id: user.id,
+        role: "member",
+      },
+      {
+        onConflict: "alliance_id,user_id",
+      },
+    );
+
+  if (allianceUserError) {
+    throw allianceUserError;
   }
 
   const { data: existingMember, error: existingMemberError } = await supabase
@@ -154,7 +180,7 @@ export async function joinAllianceAndClaimMember({
       alliance_id: alliance.id,
       user_id: user.id,
       name: cleanMemberName,
-      role: "Member",
+      role: "member",
       power: 0,
       level: null,
     })

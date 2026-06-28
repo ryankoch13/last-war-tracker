@@ -10,22 +10,31 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
 import { AllianceEvent, getAllianceEvents } from "@/lib/allianceEvents";
-import { useAllianceStore } from "../../store/allianceStore";
-import { colors } from "../../theme/colors";
-import { formatDateTime } from "../../utils/format";
+import { colors } from "@/theme/colors";
+import { formatDateTime } from "@/utils/format";
 
 export function EventListScreen() {
-  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+  const { activeAllianceId, allianceUser } = useActiveAlliance();
 
   const [events, setEvents] = useState<AllianceEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const canManageAlliance =
+    allianceUser?.role === "owner" ||
+    allianceUser?.role === "admin" ||
+    allianceUser?.role === "r4" ||
+    allianceUser?.role === "r5" ||
+    allianceUser?.role === "R4" ||
+    allianceUser?.role === "R5";
 
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
 
-      async function loadEvents() {
+      async function loadScreenData() {
         if (!activeAllianceId) {
           setEvents([]);
           setLoading(false);
@@ -34,14 +43,21 @@ export function EventListScreen() {
 
         try {
           setLoading(true);
+          setErrorMessage("");
 
-          const results = await getAllianceEvents(activeAllianceId);
+          const eventResults = await getAllianceEvents(activeAllianceId);
 
           if (isActive) {
-            setEvents(results);
+            setEvents(eventResults ?? []);
           }
         } catch (error) {
-          console.error("Failed to load events", error);
+          console.error("Failed to load event screen data", error);
+
+          if (isActive) {
+            setErrorMessage(
+              error instanceof Error ? error.message : "Could not load events.",
+            );
+          }
         } finally {
           if (isActive) {
             setLoading(false);
@@ -49,7 +65,7 @@ export function EventListScreen() {
         }
       }
 
-      loadEvents();
+      loadScreenData();
 
       return () => {
         isActive = false;
@@ -65,20 +81,37 @@ export function EventListScreen() {
         data={events}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
-          <Pressable
-            onPress={() => router.push("/events/create")}
-            style={styles.createButton}
-          >
-            <Text style={styles.createButtonText}>+ Create Event</Text>
-          </Pressable>
+          <View style={styles.header}>
+            <Text style={styles.screenTitle}>Events</Text>
+            <Text style={styles.subtitle}>
+              Track alliance events, reminders, and assignments.
+            </Text>
+
+            {canManageAlliance ? (
+              <Pressable
+                onPress={() => router.push("/events/create")}
+                style={styles.createButton}
+              >
+                <Text style={styles.createButtonText}>+ Create Event</Text>
+              </Pressable>
+            ) : null}
+
+            {errorMessage ? (
+              <View style={styles.errorPanel}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator />
+            <View style={styles.loadingPanel}>
+              <ActivityIndicator />
+              <Text style={styles.empty}>Loading events...</Text>
+            </View>
           ) : (
             <Text style={styles.empty}>
-              No events yet. Create one for Desert Storm, Alliance Duel, Capital
-              War, or custom reminders.
+              No events yet. Alliance managers can create alliance events.
             </Text>
           )
         }
@@ -113,6 +146,19 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  header: {
+    gap: 10,
+    marginBottom: 4,
+  },
+  screenTitle: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: "900",
+  },
+  subtitle: {
+    color: colors.muted,
+    lineHeight: 20,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 18,
@@ -143,6 +189,22 @@ const styles = StyleSheet.create({
   empty: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  loadingPanel: {
+    alignItems: "center",
+    gap: 8,
+    padding: 16,
+  },
+  errorPanel: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  errorText: {
+    color: "#DC2626",
+    fontWeight: "700",
   },
   createButton: {
     backgroundColor: colors.primary,
