@@ -1,20 +1,103 @@
-import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { getAllianceEvents } from "@/lib/allianceEvents";
-import { getTrainAssignments } from "@/lib/trains";
+import { getTrainAssignments } from "@/lib/trainAssignments";
 import { getAllianceMembers } from "@/services/allianceMembers";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
 import { formatCompactNumber, formatDateTime } from "../utils/format";
 
+type DashboardMember = {
+  id: string;
+  username?: string;
+  name?: string;
+  power: number;
+  weeklyVsScore: number;
+  weeklyDonations: number;
+};
+
+type DashboardEvent = {
+  id: string;
+  title: string;
+  type: string;
+  startsAt: string;
+};
+
+type DashboardTrain = {
+  id: string;
+  trainName: string;
+  departureTime: string;
+  guardIds: string[];
+  passengerIds: string[];
+};
+
 export function DashboardScreen() {
-  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
-  const trains = getTrainAssignments(activeAllianceId || "");
-  const events = getAllianceEvents(activeAllianceId || "");
-  const members = getAllianceMembers(activeAllianceId || "");
+  const alliance = useAllianceStore((state) => state.alliance);
+  const activeAllianceId = alliance?.id ?? null;
+
+  const [members, setMembers] = useState<DashboardMember[]>([]);
+  const [events, setEvents] = useState<DashboardEvent[]>([]);
+  const [trains, setTrains] = useState<DashboardTrain[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!activeAllianceId) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      try {
+        setLoading(true);
+        setErrorMessage("");
+
+        const [loadedMembers, loadedEvents, loadedTrains] = await Promise.all([
+          getAllianceMembers(activeAllianceId),
+          getAllianceEvents(activeAllianceId),
+          getTrainAssignments(activeAllianceId),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMembers(loadedMembers ?? []);
+        setEvents(loadedEvents ?? []);
+        setTrains(loadedTrains ?? []);
+      } catch (error) {
+        console.error("DASHBOARD LOAD ERROR:", error);
+
+        if (isMounted) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not load dashboard data.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeAllianceId]);
 
   const topVsMember = useMemo(() => {
     return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
@@ -44,11 +127,19 @@ export function DashboardScreen() {
             Roster, train, and event management for strategy game alliances.
           </Text>
         </View>
-        {/* 
-        <View style={styles.actions}>
-          <AppButton title="Load Demo Alliance" onPress={loadDemoData} />
-          <AppButton title="Clear" variant="secondary" onPress={clearAllData} />
-        </View> */}
+
+        {loading ? (
+          <View style={styles.loadingPanel}>
+            <ActivityIndicator />
+            <Text style={styles.emptyText}>Loading dashboard...</Text>
+          </View>
+        ) : null}
+
+        {errorMessage ? (
+          <View style={styles.panel}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.grid}>
           <StatCard label="Members" value={members.length} />
@@ -61,11 +152,11 @@ export function DashboardScreen() {
         <View style={styles.grid}>
           <StatCard
             label="Top VS"
-            value={topVsMember?.username ?? "—"}
+            value={topVsMember?.username ?? topVsMember?.name ?? "—"}
             helper={
               topVsMember
                 ? formatCompactNumber(topVsMember.weeklyVsScore)
-                : "Load demo data"
+                : "No VS data yet"
             }
           />
           <StatCard
@@ -134,9 +225,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 20,
   },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
+  loadingPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 8,
+    alignItems: "center",
   },
   grid: {
     flexDirection: "row",
@@ -168,5 +264,9 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: colors.muted,
+  },
+  errorText: {
+    color: "#DC2626",
+    fontWeight: "700",
   },
 });

@@ -12,6 +12,24 @@ export type TrainAssignment = {
   createdAt: string | null;
 };
 
+export type CreateTrainAssignmentInput = {
+  allianceId: string;
+  trainName: string;
+  scheduledDate: string;
+  guardIds?: string[];
+  passengerIds?: string[];
+  notes?: string | null;
+};
+
+export type UpdateTrainAssignmentInput = {
+  id: string;
+  trainName?: string;
+  scheduledDate?: string;
+  guardIds?: string[];
+  passengerIds?: string[];
+  notes?: string | null;
+};
+
 type TrainAssignmentRow = {
   id: string;
   alliance_id: string;
@@ -54,18 +72,7 @@ export async function getTrainAssignments(
 
   const { data, error } = await supabase
     .from("train_assignments")
-    .select(
-      `
-      id,
-      alliance_id,
-      train_name,
-      scheduled_date,
-      guard_ids,
-      passenger_ids,
-      notes,
-      created_at
-    `,
-    )
+    .select("*")
     .eq("alliance_id", allianceId)
     .order("scheduled_date", { ascending: true });
 
@@ -87,18 +94,7 @@ export async function getUpcomingTrainAssignments(
 
   const { data, error } = await supabase
     .from("train_assignments")
-    .select(
-      `
-      id,
-      alliance_id,
-      train_name,
-      scheduled_date,
-      guard_ids,
-      passenger_ids,
-      notes,
-      created_at
-    `,
-    )
+    .select("*")
     .eq("alliance_id", allianceId)
     .gte("scheduled_date", now)
     .order("scheduled_date", { ascending: true });
@@ -121,18 +117,7 @@ export async function getPastTrainAssignments(
 
   const { data, error } = await supabase
     .from("train_assignments")
-    .select(
-      `
-      id,
-      alliance_id,
-      train_name,
-      scheduled_date,
-      guard_ids,
-      passenger_ids,
-      notes,
-      created_at
-    `,
-    )
+    .select("*")
     .eq("alliance_id", allianceId)
     .lt("scheduled_date", now)
     .order("scheduled_date", { ascending: false });
@@ -144,23 +129,14 @@ export async function getPastTrainAssignments(
   return ((data ?? []) as TrainAssignmentRow[]).map(mapTrainAssignment);
 }
 
-export async function createTrainAssignment(input: {
-  allianceId: string;
-  trainName: string;
-  scheduledDate: string;
-  guardIds?: string[];
-  passengerIds?: string[];
-  notes?: string | null;
-}): Promise<TrainAssignment> {
-  const {
-    allianceId,
-    trainName,
-    scheduledDate,
-    guardIds = [],
-    passengerIds = [],
-    notes = null,
-  } = input;
-
+export async function createTrainAssignment({
+  allianceId,
+  trainName,
+  scheduledDate,
+  guardIds = [],
+  passengerIds = [],
+  notes = null,
+}: CreateTrainAssignmentInput): Promise<TrainAssignment> {
   if (!allianceId) {
     throw new Error("Alliance ID is required.");
   }
@@ -183,18 +159,7 @@ export async function createTrainAssignment(input: {
       passenger_ids: passengerIds,
       notes,
     })
-    .select(
-      `
-      id,
-      alliance_id,
-      train_name,
-      scheduled_date,
-      guard_ids,
-      passenger_ids,
-      notes,
-      created_at
-    `,
-    )
+    .select("*")
     .single();
 
   if (error) {
@@ -204,16 +169,14 @@ export async function createTrainAssignment(input: {
   return mapTrainAssignment(data as TrainAssignmentRow);
 }
 
-export async function updateTrainAssignment(input: {
-  id: string;
-  trainName?: string;
-  scheduledDate?: string;
-  guardIds?: string[];
-  passengerIds?: string[];
-  notes?: string | null;
-}): Promise<TrainAssignment> {
-  const { id, trainName, scheduledDate, guardIds, passengerIds, notes } = input;
-
+export async function updateTrainAssignment({
+  id,
+  trainName,
+  scheduledDate,
+  guardIds,
+  passengerIds,
+  notes,
+}: UpdateTrainAssignmentInput): Promise<TrainAssignment> {
   if (!id) {
     throw new Error("Train assignment ID is required.");
   }
@@ -244,18 +207,7 @@ export async function updateTrainAssignment(input: {
     .from("train_assignments")
     .update(updates)
     .eq("id", id)
-    .select(
-      `
-      id,
-      alliance_id,
-      train_name,
-      scheduled_date,
-      guard_ids,
-      passenger_ids,
-      notes,
-      created_at
-    `,
-    )
+    .select("*")
     .single();
 
   if (error) {

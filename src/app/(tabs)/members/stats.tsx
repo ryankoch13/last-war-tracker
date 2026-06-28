@@ -15,6 +15,7 @@ import {
     View,
 } from "react-native";
 
+import { colors } from "@/theme/colors";
 import { RequireActiveAlliance } from "../../../components/RequireActiveAlliance";
 import { useMyDailyStats } from "../../../hooks/useMyDailyStats";
 
@@ -167,6 +168,7 @@ function MemberStatsContent({ allianceId }: MemberStatsContentProps) {
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
+            placeholderTextColor={colors.muted}
           />
 
           <Text style={styles.label}>Alliance Donations</Text>
@@ -176,6 +178,7 @@ function MemberStatsContent({ allianceId }: MemberStatsContentProps) {
             placeholder="0"
             keyboardType="numeric"
             style={styles.input}
+            placeholderTextColor={colors.muted}
           />
 
           <Text style={styles.label}>VS Points</Text>
@@ -185,6 +188,7 @@ function MemberStatsContent({ allianceId }: MemberStatsContentProps) {
             placeholder="0"
             keyboardType="numeric"
             style={styles.input}
+            placeholderTextColor={colors.muted}
           />
 
           <Pressable

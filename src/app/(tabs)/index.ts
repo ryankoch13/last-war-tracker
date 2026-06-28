@@ -1,1 +1,3 @@
-export { DashboardScreen as default } from "../../screens/DashboardScreen";
+import { DashboardScreen } from "../../screens/DashboardScreen";
+
+export default DashboardScreen;

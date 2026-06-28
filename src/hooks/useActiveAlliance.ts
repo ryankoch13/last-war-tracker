@@ -1,50 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
-import { getActiveAllianceState } from "../services/activeAlliance";
-import { ActiveAllianceState } from "../types/alliance";
+import { useEffect } from "react";
 
-const initialState: ActiveAllianceState = {
-  userId: null,
-  member: null,
-  activeAllianceId: null,
-};
+import { useAllianceStore } from "../store/allianceStore";
 
 export function useActiveAlliance() {
-  const [state, setState] = useState<ActiveAllianceState>(initialState);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadActiveAlliance = useCallback(async () => {
-    try {
-      setError(null);
-
-      const nextState = await getActiveAllianceState();
-      setState(nextState);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load active alliance.",
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadActiveAlliance();
-  }, [loadActiveAlliance]);
+  const alliance = useAllianceStore((state) => state.alliance);
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
+  const loading = useAllianceStore((state) => state.loading);
+  const hasLoaded = useAllianceStore((state) => state.hasLoaded);
+  const error = useAllianceStore((state) => state.error);
+  const loadAlliance = useAllianceStore((state) => state.loadAlliance);
 
   useEffect(() => {
-    loadActiveAlliance();
-  }, [loadActiveAlliance]);
+    if (!hasLoaded && !loading) {
+      loadAlliance();
+    }
+  }, [hasLoaded, loading, loadAlliance]);
 
   return {
-    ...state,
+    alliance,
+    allianceUser,
+
+    activeAlliance: alliance,
+    activeAllianceId: alliance?.id ?? null,
+
     loading,
-    refreshing,
+    hasLoaded,
     error,
-    refresh,
-    hasActiveAlliance: Boolean(state.activeAllianceId && state.member),
+    hasActiveAlliance: !!alliance,
   };
+}
+
+export function useActiveAllianceId() {
+  const alliance = useAllianceStore((state) => state.alliance);
+
+  return alliance?.id ?? null;
 }

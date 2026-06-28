@@ -20,9 +20,13 @@ function SettingsHeaderButton() {
 
 export default function TabsLayout() {
   const { loading: authLoading, isSignedIn } = useAuthSession();
-  const { loading: allianceLoading, hasActiveAlliance } = useActiveAlliance();
+  const {
+    loading: allianceLoading,
+    hasLoaded: allianceHasLoaded,
+    hasActiveAlliance,
+  } = useActiveAlliance();
 
-  if (authLoading || allianceLoading) {
+  if (authLoading || allianceLoading || !allianceHasLoaded) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator />
@@ -37,6 +41,7 @@ export default function TabsLayout() {
   if (!hasActiveAlliance) {
     return <Redirect href="/alliance-setup" />;
   }
+
   return (
     <Tabs
       screenOptions={{
@@ -72,10 +77,42 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
-        name="stats"
+        name="events/index"
         options={{
-          title: "My Stats",
+          title: "Events",
+          tabBarLabel: "Events",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="trains/index"
+        options={{
+          title: "Trains",
+          tabBarLabel: "Trains",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="train-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="events/create"
+        options={{
+          href: null,
+          title: "Create Event",
+        }}
+      />
+
+      <Tabs.Screen
+        name="trains/create"
+        options={{
+          href: null,
+          title: "Create Train",
         }}
       />
     </Tabs>

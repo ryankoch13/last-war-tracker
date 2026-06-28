@@ -25,3 +25,20 @@ export async function getCurrentSupabaseUser() {
 
   return user;
 }
+
+export async function resendConfirmationEmail(email: string) {
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!cleanEmail) {
+    throw new Error("Email is required.");
+  }
+
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: cleanEmail,
+  });
+
+  if (error) {
+    throw error;
+  }
+}
