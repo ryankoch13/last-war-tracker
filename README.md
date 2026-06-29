@@ -1,28 +1,56 @@
-# Last War Alliance Tracker
+# Last War Tracker
 
-A mobile companion app for managing alliance activity in **Last War: Survival**.  
-The app helps alliance leadership track members, train assignments, events, donations, versus points, and other recurring alliance responsibilities in one place.
+A React Native alliance management app for **Last War** R4s and R5s who want a cleaner way to track alliance members, event prep, train assignments, and weekly contribution data.
+
+Last War Tracker is designed to replace scattered notes, screenshots, and spreadsheets with one mobile-friendly place for alliance leadership to manage roster information and coordinate recurring alliance responsibilities.
+
+## Overview
+
+Alliance leadership in Last War can get messy fast. Between tracking member power, HQ levels, VS scores, donations, train assignments, Desert Storm prep, and event participation, important information often ends up spread across chat messages or manual spreadsheets.
+
+This app gives R4/R5 leadership a simple operational dashboard for keeping alliance data organized and easy to review.
 
 ## Features
 
-- Alliance member tracking
-- Member detail screens with editable stats
-- Daily donation and versus score entries
-- Weekly activity views
-- Train assignment board
-- Train assignment history
-- Alliance events tracking
-- Persistent local storage
-- Mobile-first UI built for quick alliance management
+- **Alliance Dashboard**
+  - View total alliance power
+  - See top weekly VS contributors
+  - Identify members with low weekly donations
+  - Preview the next upcoming event
+  - Review active train assignments
+
+- **Member Roster**
+  - Track usernames, rank, power, HQ level, main squad type, VS score, donations, and notes
+  - Search members by username, rank, or squad type
+  - Sort members by power
+  - Add and edit member records
+
+- **Event Tracking**
+  - Track alliance events such as Desert Storm, Alliance Duel, Capital War, Rare Soil War, trains, and custom reminders
+  - Assign members to events
+  - Store event descriptions and start times
+
+- **Train Board**
+  - Track alliance train assignments
+  - Assign conductors, guards, and passengers
+  - Add notes for train coordination
+
+- **Local Persistence**
+  - Uses local device storage so alliance data remains available between app sessions
+
+- **Demo Data**
+  - Includes sample members, events, and train assignments to quickly preview the app experience
 
 ## Tech Stack
 
-- React Native
-- Expo
-- Expo Router
-- TypeScript
-- Zustand
-- MMKV storage
+- **React Native**
+- **Expo**
+- **Expo Router**
+- **TypeScript**
+- **Zustand**
+- **AsyncStorage**
+- **React Navigation**
+- **Expo Vector Icons**
 
 ## Getting Started
 
@@ -31,9 +59,9 @@ The app helps alliance leadership track members, train assignments, events, dona
 Make sure you have the following installed:
 
 - Node.js
-- npm or yarn
-- Expo CLI
-- iOS Simulator or Android Emulator, or the Expo Go app
+- Yarn or npm
+- Expo CLI tooling
+- iOS Simulator, Android Emulator, or Expo Go
 
 ### Installation
 

@@ -21,6 +21,17 @@ export type AllianceUser = {
   created_at: string;
 };
 
+export type DailyMemberStat = {
+  id: string;
+  memberId: string;
+  date: string;
+  versusPoints: number;
+  donations: number;
+  notes?: string;
+};
+
+type AllianceMemberInput = Omit<AllianceMember, "id">;
+
 type AllianceEventInput = {
   name: string;
   type: AllianceEvent["type"];
@@ -37,6 +48,7 @@ type AllianceStore = {
 
   members: AllianceMember[];
   events: AllianceEvent[];
+  dailyStats: DailyMemberStat[];
 
   loadActiveAlliance: () => Promise<void>;
   createAllianceAndMember: (
@@ -50,6 +62,18 @@ type AllianceStore = {
   clearAlliance: () => void;
 
   setMembers: (members: AllianceMember[]) => void;
+  addAllianceMember: (member: AllianceMemberInput) => void;
+  updateAllianceMember: (
+    memberId: string,
+    updates: Partial<AllianceMember>,
+  ) => void;
+  deleteAllianceMember: (memberId: string) => void;
+
+  // Aliases in case older screens use these names.
+  addMember: (member: AllianceMemberInput) => void;
+  updateMember: (memberId: string, updates: Partial<AllianceMember>) => void;
+  deleteMember: (memberId: string) => void;
+
   setEvents: (events: AllianceEvent[]) => void;
   addAllianceEvent: (event: AllianceEventInput) => void;
   updateAllianceEvent: (
@@ -59,6 +83,11 @@ type AllianceStore = {
   completeAllianceEvent: (eventId: string) => void;
   reopenAllianceEvent: (eventId: string) => void;
   deleteAllianceEvent: (eventId: string) => void;
+
+  setDailyStats: (dailyStats: DailyMemberStat[]) => void;
+  addDailyStat: (stat: Omit<DailyMemberStat, "id">) => void;
+  updateDailyStat: (statId: string, updates: Partial<DailyMemberStat>) => void;
+  deleteDailyStat: (statId: string) => void;
 };
 
 function generateInviteCode() {
@@ -82,6 +111,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
 
   members: [],
   events: [],
+  dailyStats: [],
 
   loadActiveAlliance: async () => {
     set({ loading: true, error: null });
@@ -107,20 +137,20 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
         return;
       }
 
-      const { data: allianceMembers, error: memberError } = await supabase
+      const { data: allianceUsers, error: allianceUserError } = await supabase
         .from("alliance_users")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (memberError) {
-        throw memberError;
+      if (allianceUserError) {
+        throw allianceUserError;
       }
 
-      const allianceMember = allianceMembers?.[0];
+      const allianceUser = allianceUsers?.[0];
 
-      if (!allianceMember) {
+      if (!allianceUser) {
         set({
           activeAllianceId: null,
           activeAlliance: null,
@@ -134,7 +164,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
       const { data: alliance, error: allianceError } = await supabase
         .from("alliances")
         .select("*")
-        .eq("id", allianceMember.alliance_id)
+        .eq("id", allianceUser.alliance_id)
         .single();
 
       if (allianceError) {
@@ -144,7 +174,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
       set({
         activeAllianceId: alliance.id,
         activeAlliance: alliance,
-        allianceUser: allianceMember,
+        allianceUser,
         loading: false,
         error: null,
       });
@@ -205,7 +235,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
         throw allianceError;
       }
 
-      const { data: allianceMember, error: memberError } = await supabase
+      const { data: allianceUser, error: allianceUserError } = await supabase
         .from("alliance_users")
         .insert({
           alliance_id: alliance.id,
@@ -215,14 +245,14 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
         .select("*")
         .single();
 
-      if (memberError) {
-        throw memberError;
+      if (allianceUserError) {
+        throw allianceUserError;
       }
 
       set({
         activeAllianceId: alliance.id,
         activeAlliance: alliance,
-        allianceUser: allianceMember,
+        allianceUser,
         loading: false,
         error: null,
       });
@@ -277,7 +307,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
         throw allianceError;
       }
 
-      const { data: allianceMember, error: memberError } = await supabase
+      const { data: allianceUser, error: allianceUserError } = await supabase
         .from("alliance_users")
         .insert({
           alliance_id: alliance.id,
@@ -287,14 +317,14 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
         .select("*")
         .single();
 
-      if (memberError) {
-        throw memberError;
+      if (allianceUserError) {
+        throw allianceUserError;
       }
 
       set({
         activeAllianceId: alliance.id,
         activeAlliance: alliance,
-        allianceUser: allianceMember,
+        allianceUser,
         loading: false,
         error: null,
       });
@@ -320,6 +350,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
       error: null,
       members: [],
       events: [],
+      dailyStats: [],
     });
   },
 
@@ -327,12 +358,64 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
     set({ members });
   },
 
+  addAllianceMember: (member: AllianceMemberInput) => {
+    const newMember = {
+      id: generateLocalId("member"),
+      ...member,
+    } as AllianceMember;
+
+    set((state) => ({
+      members: [...state.members, newMember],
+    }));
+  },
+
+  updateAllianceMember: (
+    memberId: string,
+    updates: Partial<AllianceMember>,
+  ) => {
+    set((state) => ({
+      members: state.members.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              ...updates,
+            }
+          : member,
+      ),
+    }));
+  },
+
+  deleteAllianceMember: (memberId: string) => {
+    set((state) => ({
+      members: state.members.filter((member) => member.id !== memberId),
+      dailyStats: state.dailyStats.filter((stat) => stat.memberId !== memberId),
+      events: state.events.map((event) => ({
+        ...event,
+        assignedMemberIds: (event.assignedMemberIds ?? []).filter(
+          (assignedMemberId) => assignedMemberId !== memberId,
+        ),
+      })),
+    }));
+  },
+
+  addMember: (member: AllianceMemberInput) => {
+    get().addAllianceMember(member);
+  },
+
+  updateMember: (memberId: string, updates: Partial<AllianceMember>) => {
+    get().updateAllianceMember(memberId, updates);
+  },
+
+  deleteMember: (memberId: string) => {
+    get().deleteAllianceMember(memberId);
+  },
+
   setEvents: (events: AllianceEvent[]) => {
     set({ events });
   },
 
   addAllianceEvent: (event: AllianceEventInput) => {
-    const newEvent: AllianceEvent = {
+    const newEvent = {
       id: generateLocalId("event"),
       name: event.name,
       type: event.type,
@@ -341,7 +424,7 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
       status: "active",
       assignedMemberIds: [],
       completedAt: undefined,
-    };
+    } as AllianceEvent;
 
     set((state) => ({
       events: [...state.events, newEvent],
@@ -392,6 +475,40 @@ export const useAllianceStore = create<AllianceStore>((set, get) => ({
   deleteAllianceEvent: (eventId: string) => {
     set((state) => ({
       events: state.events.filter((event) => event.id !== eventId),
+    }));
+  },
+
+  setDailyStats: (dailyStats: DailyMemberStat[]) => {
+    set({ dailyStats });
+  },
+
+  addDailyStat: (stat: Omit<DailyMemberStat, "id">) => {
+    const newStat: DailyMemberStat = {
+      id: generateLocalId("daily_stat"),
+      ...stat,
+    };
+
+    set((state) => ({
+      dailyStats: [...state.dailyStats, newStat],
+    }));
+  },
+
+  updateDailyStat: (statId: string, updates: Partial<DailyMemberStat>) => {
+    set((state) => ({
+      dailyStats: state.dailyStats.map((stat) =>
+        stat.id === statId
+          ? {
+              ...stat,
+              ...updates,
+            }
+          : stat,
+      ),
+    }));
+  },
+
+  deleteDailyStat: (statId: string) => {
+    set((state) => ({
+      dailyStats: state.dailyStats.filter((stat) => stat.id !== statId),
     }));
   },
 }));
