@@ -63,7 +63,7 @@ export default function SignInScreen() {
         throw error;
       }
 
-      router.replace("/");
+      router.replace("/(tabs)/members");
     } catch (err) {
       Alert.alert(
         "Could not sign in",
