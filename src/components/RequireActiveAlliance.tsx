@@ -1,95 +1,78 @@
-import { router, usePathname } from "expo-router";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { router } from "expo-router";
+import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useActiveAlliance } from "@/hooks/useActiveAlliance";
-import { supabase } from "@/lib/supabase";
 import { colors } from "@/theme/colors";
 
 type RequireActiveAllianceProps = {
   children: ReactNode;
 };
 
+type RouterTarget = Parameters<typeof router.replace>[0];
+
+const ALLIANCE_SETUP_ROUTE = "/alliance-setup" as RouterTarget;
+
 export function RequireActiveAlliance({
   children,
 }: RequireActiveAllianceProps) {
-  const pathname = usePathname();
-
-  const { activeAllianceId, loadActiveAlliance } = useActiveAlliance();
-
-  const [checking, setChecking] = useState(true);
-  const hasCheckedRef = useRef(false);
+  const { loading, hasLoaded, hasActiveAlliance, error } = useActiveAlliance();
 
   useEffect(() => {
-    if (hasCheckedRef.current) {
-      return;
+    if (hasLoaded && !loading && !error && !hasActiveAlliance) {
+      router.replace(ALLIANCE_SETUP_ROUTE);
     }
+  }, [hasLoaded, loading, error, hasActiveAlliance]);
 
-    hasCheckedRef.current = true;
-
-    const checkAlliance = async () => {
-      try {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
-
-        if (error) {
-          throw error;
-        }
-
-        if (!user) {
-          router.replace("/sign-in");
-          return;
-        }
-
-        await loadActiveAlliance();
-      } catch (error) {
-        console.error("REQUIRE ACTIVE ALLIANCE ERROR:", error);
-      } finally {
-        setChecking(false);
-      }
-    };
-
-    checkAlliance();
-  }, [loadActiveAlliance]);
-
-  useEffect(() => {
-    if (checking) {
-      return;
-    }
-
-    if (!activeAllianceId && pathname !== "/alliance-setup") {
-      router.replace("/alliance-setup");
-    }
-  }, [activeAllianceId, checking, pathname]);
-
-  if (checking) {
+  if (loading || !hasLoaded) {
     return (
-      <View style={styles.container}>
+      <View style={styles.centered}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Checking alliance...</Text>
+        <Text style={styles.message}>Loading alliance...</Text>
       </View>
     );
   }
 
-  if (!activeAllianceId) {
-    return null;
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.title}>Could not load alliance</Text>
+        <Text style={styles.message}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!hasActiveAlliance) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={styles.message}>Redirecting to alliance setup...</Text>
+      </View>
+    );
   }
 
   return <>{children}</>;
 }
 
 const styles = StyleSheet.create({
-  container: {
+  centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    padding: 24,
     backgroundColor: colors.background,
   },
-  loadingText: {
+  title: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  message: {
     color: colors.muted,
     fontSize: 14,
-    marginTop: 12,
+    textAlign: "center",
   },
 });

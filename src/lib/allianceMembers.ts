@@ -1,7 +1,6 @@
 // lib/allianceMembers.ts
 import { supabase } from "@/lib/supabase";
-
-export type AllianceRole = "R1" | "R2" | "R3" | "R4" | "R5";
+import { AllianceRole } from "@/store/allianceStore";
 
 export type ActiveAllianceMember = {
   id: string;

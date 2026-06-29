@@ -1,4 +1,4 @@
-export type AllianceRank = "R1" | "R2" | "R3" | "R4" | "R5";
+import { AllianceRole } from "@/store/allianceStore";
 
 export type SquadType = "Tank" | "Air" | "Missile" | "Mixed";
 
@@ -6,7 +6,7 @@ export type AllianceMember = {
   id: string;
   username: string;
   alliance_id: string;
-  rank: AllianceRank;
+  rank: AllianceRole;
   power: number;
   hqLevel: number;
   mainSquad: SquadType;
