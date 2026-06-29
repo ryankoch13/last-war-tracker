@@ -1,8 +1,14 @@
+// app/settings.tsx
+
+import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
+import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -10,24 +16,102 @@ import {
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useActiveAlliance } from "@/hooks/useActiveAlliance";
-import { useAllianceStore } from "@/store/allianceStore";
+import { AllianceRole, useAllianceStore } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
+type RouterTarget = Parameters<typeof router.replace>[0];
+
+const LOGIN_ROUTE = "/login" as RouterTarget;
+const primaryColor = "#6d28d9";
+
+function formatRole(role: AllianceRole | null | undefined) {
+  return role ? role.toUpperCase() : "R1";
+}
+
 export default function SettingsScreen() {
-  const { activeAlliance, allianceUser, canManageAlliance } =
-    useActiveAlliance();
+  return (
+    <RequireActiveAlliance>
+      <SettingsContent />
+    </RequireActiveAlliance>
+  );
+}
+
+function SettingsContent() {
+  const { activeAlliance, allianceUser } = useActiveAlliance();
 
   const signOut = useAllianceStore((state) => state.signOut);
 
+  const [signingOut, setSigningOut] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [sharing, setSharing] = useState(false);
+
+  const inviteCode = activeAlliance?.inviteCode ?? "";
+  const allianceName = activeAlliance?.name ?? "Your Alliance";
+  const role = allianceUser?.role ?? AllianceRole.R1;
+
+  const canManageAlliance =
+    role === AllianceRole.R4 || role === AllianceRole.R5;
+
+  async function handleCopyInviteCode() {
+    if (!inviteCode) {
+      Alert.alert(
+        "No invite code",
+        "This alliance does not have an invite code.",
+      );
+      return;
+    }
+
+    try {
+      setCopying(true);
+      await Clipboard.setStringAsync(inviteCode);
+      Alert.alert("Copied", "Invite code copied to clipboard.");
+    } catch (error) {
+      Alert.alert(
+        "Could not copy",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  async function handleShareInviteCode() {
+    if (!inviteCode) {
+      Alert.alert(
+        "No invite code",
+        "This alliance does not have an invite code.",
+      );
+      return;
+    }
+
+    try {
+      setSharing(true);
+
+      await Share.share({
+        message: `Join my Last War alliance tracker.\n\nAlliance: ${allianceName}\nInvite code: ${inviteCode}`,
+      });
+    } catch (error) {
+      Alert.alert(
+        "Could not share",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setSharing(false);
+    }
+  }
+
   async function handleSignOut() {
     try {
+      setSigningOut(true);
       await signOut();
-      router.replace("/login");
+      router.replace(LOGIN_ROUTE);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not sign out.";
-
-      Alert.alert("Sign out failed", message);
+      Alert.alert(
+        "Could not sign out",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setSigningOut(false);
     }
   }
 
@@ -46,134 +130,226 @@ export default function SettingsScreen() {
   }
 
   return (
-    <RequireActiveAlliance>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.screenTitle}>Settings</Text>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.subtitle}>
+          Manage your alliance tracker settings.
+        </Text>
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Alliance</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Alliance</Text>
+        <Text style={styles.allianceName}>{allianceName}</Text>
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Name</Text>
-            <Text style={styles.rowValue}>
-              {activeAlliance?.name ?? "Unknown Alliance"}
-            </Text>
+        <View style={styles.divider} />
+
+        <View style={styles.infoRow}>
+          <View style={styles.infoBlock}>
+            <Text style={styles.cardLabel}>Your Role</Text>
+            <Text style={styles.infoValue}>{formatRole(role)}</Text>
           </View>
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Your Role</Text>
-            <Text style={styles.rowValue}>
-              {allianceUser?.role ?? "member"}
+          <View style={styles.infoBlock}>
+            <Text style={styles.cardLabel}>Permissions</Text>
+            <Text style={styles.infoValue}>
+              {canManageAlliance ? "Manager" : "Member"}
             </Text>
           </View>
-
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Invite Code</Text>
-            <Text selectable style={styles.inviteCode}>
-              {activeAlliance?.inviteCode || "No invite code found"}
-            </Text>
-          </View>
-
-          <Text style={styles.helperText}>
-            Share this invite code with alliance members so they can join this
-            workspace.
-          </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Permissions</Text>
+        <View style={styles.divider} />
 
-          <Text style={styles.bodyText}>
-            {canManageAlliance
-              ? "You can manage alliance-level features like events and train assignments."
-              : "You can view alliance data. R4 and R5 members can manage alliance-level features."}
-          </Text>
-        </View>
+        <Text style={styles.cardLabel}>Invite Code</Text>
 
-        <Pressable style={styles.signOutButton} onPress={confirmSignOut}>
-          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        <Pressable onPress={handleCopyInviteCode} style={styles.inviteBox}>
+          <Text style={styles.inviteCode}>{inviteCode || "—"}</Text>
         </Pressable>
-      </ScrollView>
-    </RequireActiveAlliance>
+
+        <Text style={styles.helperText}>
+          Share this code with alliance members so they can join your tracker.
+        </Text>
+
+        <View style={styles.buttonRow}>
+          <Pressable
+            onPress={handleCopyInviteCode}
+            disabled={copying}
+            style={[
+              styles.actionButton,
+              styles.secondaryButton,
+              copying && styles.disabledButton,
+            ]}
+          >
+            <Text style={styles.secondaryButtonText}>
+              {copying ? "Copying..." : "Copy"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleShareInviteCode}
+            disabled={sharing}
+            style={[
+              styles.actionButton,
+              styles.primaryButton,
+              sharing && styles.disabledButton,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>
+              {sharing ? "Sharing..." : "Share"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Account</Text>
+        <Text style={styles.helperText}>
+          Sign out of this device. Your alliance data will remain saved.
+        </Text>
+
+        <Pressable
+          onPress={confirmSignOut}
+          disabled={signingOut}
+          style={[styles.dangerButton, signingOut && styles.disabledButton]}
+        >
+          {signingOut ? (
+            <ActivityIndicator color="#dc2626" />
+          ) : (
+            <Text style={styles.dangerButtonText}>Sign Out</Text>
+          )}
+        </Pressable>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    paddingBottom: 40,
+  screen: {
+    flex: 1,
     backgroundColor: colors.background,
   },
-  screenTitle: {
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  header: {
+    gap: 6,
+  },
+  title: {
     color: colors.text,
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: "900",
-    marginBottom: 20,
+  },
+  subtitle: {
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 21,
   },
   card: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 20,
-    backgroundColor: "#ffffff",
-    padding: 18,
-    marginBottom: 16,
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    elevation: 2,
+    padding: 16,
+    gap: 12,
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 14,
+    fontSize: 20,
+    fontWeight: "900",
   },
-  row: {
-    marginBottom: 14,
-  },
-  rowLabel: {
+  cardLabel: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontWeight: "800",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  rowValue: {
+  allianceName: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: "900",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 2,
+  },
+  infoRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  infoBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  infoValue: {
     color: colors.text,
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "900",
+  },
+  inviteBox: {
+    borderWidth: 1,
+    borderColor: "#d8d0ff",
+    backgroundColor: "#f8f5ff",
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: "center",
   },
   inviteCode: {
-    color: colors.primary,
-    fontSize: 22,
+    color: primaryColor,
+    fontSize: 30,
     fontWeight: "900",
-    letterSpacing: 2,
+    letterSpacing: 4,
   },
   helperText: {
     color: colors.muted,
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 4,
   },
-  bodyText: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
   },
-  signOutButton: {
-    minHeight: 50,
-    borderRadius: 16,
+  actionButton: {
+    flex: 1,
+  },
+  primaryButton: {
+    backgroundColor: primaryColor,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#ffffff",
+    fontWeight: "900",
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: primaryColor,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    color: primaryColor,
+    fontWeight: "900",
+  },
+  dangerButton: {
+    borderWidth: 1,
+    borderColor: "#ef4444",
+    borderRadius: 14,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ef4444",
-    marginTop: 8,
+    paddingVertical: 13,
   },
-  signOutButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "800",
+  dangerButtonText: {
+    color: "#dc2626",
+    fontWeight: "900",
+  },
+  disabledButton: {
+    opacity: 0.55,
   },
 });

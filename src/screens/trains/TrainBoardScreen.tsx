@@ -720,4 +720,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    maxHeight: "82%",
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 16,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  modalClose: {
+    color: colors.primary,
+    fontWeight: "900",
+    fontSize: 16,
+  },
+  memberList: {
+    gap: 10,
+    paddingBottom: 24,
+  },
+  memberRow: {
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  memberRowSelected: {
+    borderColor: colors.primary,
+  },
+  memberName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  memberMeta: {
+    color: colors.muted,
+    marginTop: 2,
+  },
+  checkmark: {
+    color: colors.primary,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  pressed: {
+    opacity: 0.65,
+  },
+  createButton: {
+    backgroundColor: "#7c3aed",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  createButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
+  },
 });

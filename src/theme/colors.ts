@@ -1,5 +1,5 @@
 export const colors = {
-  background: "#F6F3FA",
+  background: "#F6F3EF",
   surface: "#FFFFFF",
   surfaceAlt: "#F0EAF8",
   text: "#18121F",
@@ -10,4 +10,8 @@ export const colors = {
   border: "#E3D8EF",
   danger: "#DC2626",
   success: "#16A34A",
+  inputBackground: "#FFFFFF",
+  inputText: "#171717",
+  inputPlaceholder: "#9CA3AF",
+  inputBorder: "#D1D5DB",
 };
