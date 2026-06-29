@@ -1,135 +1,397 @@
 import { create } from "zustand";
 
-import { supabase } from "../lib/supabase";
-import { getCurrentSupabaseUser } from "../services/auth";
+import { supabase } from "@/lib/supabase";
+import type { AllianceEvent, AllianceMember } from "@/types/alliance";
 
-type Alliance = {
+export type AllianceRole = "r1" | "r2" | "r3" | "r4" | "r5";
+
+export type Alliance = {
   id: string;
   name: string;
-  created_by: string;
   invite_code: string | null;
-  created_at?: string;
+  created_by: string | null;
+  created_at: string;
 };
 
-type AllianceUser = {
+export type AllianceUser = {
+  id: string;
   alliance_id: string;
   user_id: string;
-  role: string;
+  role: AllianceRole;
+  created_at: string;
+};
+
+type AllianceEventInput = {
+  name: string;
+  type: AllianceEvent["type"];
+  date: string;
+  notes?: string;
 };
 
 type AllianceStore = {
-  alliance: Alliance | null;
+  activeAllianceId: string | null;
+  activeAlliance: Alliance | null;
   allianceUser: AllianceUser | null;
   loading: boolean;
-  hasLoaded: boolean;
   error: string | null;
 
-  loadAlliance: (force?: boolean) => Promise<void>;
+  members: AllianceMember[];
+  events: AllianceEvent[];
+
+  loadActiveAlliance: () => Promise<void>;
+  createAllianceAndMember: (
+    allianceName: string,
+    memberName: string,
+  ) => Promise<void>;
+  joinAllianceByInviteCode: (
+    inviteCode: string,
+    memberName: string,
+  ) => Promise<void>;
   clearAlliance: () => void;
+
+  setMembers: (members: AllianceMember[]) => void;
+  setEvents: (events: AllianceEvent[]) => void;
+  addAllianceEvent: (event: AllianceEventInput) => void;
+  updateAllianceEvent: (
+    eventId: string,
+    updates: Partial<AllianceEvent>,
+  ) => void;
+  completeAllianceEvent: (eventId: string) => void;
+  reopenAllianceEvent: (eventId: string) => void;
+  deleteAllianceEvent: (eventId: string) => void;
 };
 
+function generateInviteCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function generateLocalId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getTodayDateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export const useAllianceStore = create<AllianceStore>((set, get) => ({
-  alliance: null,
+  activeAllianceId: null,
+  activeAlliance: null,
   allianceUser: null,
   loading: false,
-  hasLoaded: false,
   error: null,
 
-  loadAlliance: async (force = false) => {
-    const { loading, hasLoaded } = get();
+  members: [],
+  events: [],
 
-    if (loading) {
-      return;
-    }
-
-    if (hasLoaded && !force) {
-      return;
-    }
-
+  loadActiveAlliance: async () => {
     set({ loading: true, error: null });
 
     try {
-      const user = await getCurrentSupabaseUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
 
       if (!user) {
         set({
-          alliance: null,
+          activeAllianceId: null,
+          activeAlliance: null,
           allianceUser: null,
           loading: false,
-          hasLoaded: true,
           error: null,
         });
         return;
       }
 
-      const { data, error } = await supabase
+      const { data: allianceMembers, error: memberError } = await supabase
         .from("alliance_users")
-        .select(
-          `
-          alliance_id,
-          user_id,
-          role,
-          alliance:alliances (
-            id,
-            name,
-            created_by,
-            invite_code,
-            created_at
-          )
-        `,
-        )
+        .select("*")
         .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
         .limit(1);
 
-      if (error) {
-        throw error;
+      if (memberError) {
+        throw memberError;
       }
 
-      const allianceUser = data?.[0];
+      const allianceMember = allianceMembers?.[0];
 
-      if (!allianceUser) {
+      if (!allianceMember) {
         set({
-          alliance: null,
+          activeAllianceId: null,
+          activeAlliance: null,
           allianceUser: null,
           loading: false,
-          hasLoaded: true,
           error: null,
         });
         return;
+      }
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .select("*")
+        .eq("id", allianceMember.alliance_id)
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
       }
 
       set({
-        alliance: allianceUser.alliance as Alliance,
-        allianceUser: {
-          alliance_id: allianceUser.alliance_id,
-          user_id: allianceUser.user_id,
-          role: allianceUser.role,
-        },
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser: allianceMember,
         loading: false,
-        hasLoaded: true,
         error: null,
       });
     } catch (error) {
-      console.error("LOAD ALLIANCE ERROR:", error);
+      console.error("LOAD ACTIVE ALLIANCE ERROR:", error);
 
       set({
-        alliance: null,
+        activeAllianceId: null,
+        activeAlliance: null,
         allianceUser: null,
         loading: false,
-        hasLoaded: true,
-        error:
-          error instanceof Error ? error.message : "Could not load alliance.",
+        error: "Could not load active alliance.",
       });
+    }
+  },
+
+  createAllianceAndMember: async (allianceName: string, memberName: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const trimmedAllianceName = allianceName.trim();
+      const trimmedMemberName = memberName.trim();
+
+      if (!trimmedAllianceName) {
+        throw new Error("Alliance name is required.");
+      }
+
+      if (!trimmedMemberName) {
+        throw new Error("Member name is required.");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("You must be logged in to create an alliance.");
+      }
+
+      const inviteCode = generateInviteCode();
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .insert({
+          name: trimmedAllianceName,
+          invite_code: inviteCode,
+          created_by: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
+      }
+
+      const { data: allianceMember, error: memberError } = await supabase
+        .from("alliance_users")
+        .insert({
+          alliance_id: alliance.id,
+          user_id: user.id,
+          role: "r5",
+        })
+        .select("*")
+        .single();
+
+      if (memberError) {
+        throw memberError;
+      }
+
+      set({
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser: allianceMember,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("CREATE ALLIANCE ERROR:", error);
+
+      set({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : "Could not create alliance.",
+      });
+
+      throw error;
+    }
+  },
+
+  joinAllianceByInviteCode: async (inviteCode: string, memberName: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const trimmedInviteCode = inviteCode.trim().toUpperCase();
+      const trimmedMemberName = memberName.trim();
+
+      if (!trimmedInviteCode) {
+        throw new Error("Invite code is required.");
+      }
+
+      if (!trimmedMemberName) {
+        throw new Error("Member name is required.");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("You must be logged in to join an alliance.");
+      }
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .select("*")
+        .eq("invite_code", trimmedInviteCode)
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
+      }
+
+      const { data: allianceMember, error: memberError } = await supabase
+        .from("alliance_users")
+        .insert({
+          alliance_id: alliance.id,
+          user_id: user.id,
+          role: "r1",
+        })
+        .select("*")
+        .single();
+
+      if (memberError) {
+        throw memberError;
+      }
+
+      set({
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser: allianceMember,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("JOIN ALLIANCE ERROR:", error);
+
+      set({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : "Could not join alliance.",
+      });
+
+      throw error;
     }
   },
 
   clearAlliance: () => {
     set({
-      alliance: null,
+      activeAllianceId: null,
+      activeAlliance: null,
       allianceUser: null,
       loading: false,
-      hasLoaded: false,
       error: null,
+      members: [],
+      events: [],
     });
+  },
+
+  setMembers: (members: AllianceMember[]) => {
+    set({ members });
+  },
+
+  setEvents: (events: AllianceEvent[]) => {
+    set({ events });
+  },
+
+  addAllianceEvent: (event: AllianceEventInput) => {
+    const newEvent: AllianceEvent = {
+      id: generateLocalId("event"),
+      name: event.name,
+      type: event.type,
+      date: event.date || getTodayDateKey(),
+      notes: event.notes ?? "",
+      status: "active",
+      assignedMemberIds: [],
+      completedAt: undefined,
+    };
+
+    set((state) => ({
+      events: [...state.events, newEvent],
+    }));
+  },
+
+  updateAllianceEvent: (eventId: string, updates: Partial<AllianceEvent>) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              ...updates,
+            }
+          : event,
+      ),
+    }));
+  },
+
+  completeAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              status: "completed",
+              completedAt: getTodayDateKey(),
+            }
+          : event,
+      ),
+    }));
+  },
+
+  reopenAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              status: "active",
+              completedAt: undefined,
+            }
+          : event,
+      ),
+    }));
+  },
+
+  deleteAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.filter((event) => event.id !== eventId),
+    }));
   },
 }));
