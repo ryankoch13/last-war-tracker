@@ -1,239 +1,179 @@
-import { Stack } from "expo-router";
-import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { useAllianceStore } from "../store/allianceStore";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
+import { useAllianceStore } from "@/store/allianceStore";
+import { colors } from "@/theme/colors";
 
 export default function SettingsScreen() {
-  const [isClearModalVisible, setIsClearModalVisible] = useState(false);
+  const { activeAlliance, allianceUser, canManageAlliance } =
+    useActiveAlliance();
 
-  const loadDemoData = useAllianceStore((state) => state.loadDemoData);
-  const clearAllData = useAllianceStore((state) => state.clearAllData);
+  const signOut = useAllianceStore((state) => state.signOut);
 
-  const membersCount = useAllianceStore((state) => state.members.length);
-  const eventsCount = useAllianceStore((state) => state.events.length);
-  const trainsCount = useAllianceStore((state) => state.trains.length);
+  async function handleSignOut() {
+    try {
+      await signOut();
+      router.replace("/login");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not sign out.";
 
-  const handleLoadDemoData = () => {
-    loadDemoData();
-  };
+      Alert.alert("Sign out failed", message);
+    }
+  }
 
-  const handleConfirmClear = () => {
-    clearAllData();
-    setIsClearModalVisible(false);
-  };
+  function confirmSignOut() {
+    Alert.alert("Sign out?", "You can sign back in at any time.", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: handleSignOut,
+      },
+    ]);
+  }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Settings",
-        }}
-      />
-
-      <View style={styles.container}>
-        <Text style={styles.title}>Settings</Text>
+    <RequireActiveAlliance>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.screenTitle}>Settings</Text>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Alliance Data</Text>
+          <Text style={styles.cardTitle}>Alliance</Text>
 
-          <Text style={styles.cardDescription}>
-            Manage your saved alliance members, events, and train assignments.
-          </Text>
-
-          <View style={styles.statsContainer}>
-            <Text style={styles.statText}>Members: {membersCount}</Text>
-            <Text style={styles.statText}>Events: {eventsCount}</Text>
-            <Text style={styles.statText}>Trains: {trainsCount}</Text>
-          </View>
-
-          <Pressable
-            onPress={handleLoadDemoData}
-            style={({ pressed }) => [
-              styles.button,
-              styles.primaryButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.primaryButtonText}>Load demo alliance</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setIsClearModalVisible(true)}
-            style={({ pressed }) => [
-              styles.button,
-              styles.dangerButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.dangerButtonText}>Clear alliance data</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <Modal
-        visible={isClearModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsClearModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Clear alliance data?</Text>
-
-            <Text style={styles.modalDescription}>
-              This will permanently delete your saved members, events, and train
-              assignments from this device.
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Name</Text>
+            <Text style={styles.rowValue}>
+              {activeAlliance?.name ?? "Unknown Alliance"}
             </Text>
-
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setIsClearModalVisible(false)}
-                style={({ pressed }) => [
-                  styles.modalButton,
-                  styles.cancelModalButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.cancelModalButtonText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleConfirmClear}
-                style={({ pressed }) => [
-                  styles.modalButton,
-                  styles.confirmModalButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.confirmModalButtonText}>Clear</Text>
-              </Pressable>
-            </View>
           </View>
+
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Your Role</Text>
+            <Text style={styles.rowValue}>
+              {allianceUser?.role ?? "member"}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Invite Code</Text>
+            <Text selectable style={styles.inviteCode}>
+              {activeAlliance?.inviteCode || "No invite code found"}
+            </Text>
+          </View>
+
+          <Text style={styles.helperText}>
+            Share this invite code with alliance members so they can join this
+            workspace.
+          </Text>
         </View>
-      </Modal>
-    </>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Permissions</Text>
+
+          <Text style={styles.bodyText}>
+            {canManageAlliance
+              ? "You can manage alliance-level features like events and train assignments."
+              : "You can view alliance data. R4 and R5 members can manage alliance-level features."}
+          </Text>
+        </View>
+
+        <Pressable style={styles.signOutButton} onPress={confirmSignOut}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </Pressable>
+      </ScrollView>
+    </RequireActiveAlliance>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     padding: 20,
-    backgroundColor: "#f7f7f8",
+    paddingBottom: 40,
+    backgroundColor: colors.background,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
+  screenTitle: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: "900",
     marginBottom: 20,
-    color: "#111827",
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
     padding: 18,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    marginBottom: 16,
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 2,
   },
   cardTitle: {
-    fontSize: 20,
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 14,
+  },
+  row: {
+    marginBottom: 14,
+  },
+  rowLabel: {
+    color: colors.muted,
+    fontSize: 13,
     fontWeight: "700",
-    color: "#111827",
-    marginBottom: 6,
+    marginBottom: 4,
+    textTransform: "uppercase",
   },
-  cardDescription: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6b7280",
-    marginBottom: 16,
-  },
-  statsContainer: {
-    gap: 6,
-    marginBottom: 18,
-  },
-  statText: {
-    fontSize: 15,
-    color: "#374151",
-  },
-  button: {
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-  },
-  primaryButton: {
-    backgroundColor: "#4f46e5",
-  },
-  primaryButtonText: {
-    color: "#fff",
+  rowValue: {
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
-  dangerButton: {
-    backgroundColor: "#fee2e2",
-    borderWidth: 1,
-    borderColor: "#fecaca",
-  },
-  dangerButtonText: {
-    color: "#b91c1c",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 20,
-  },
-  modalTitle: {
+  inviteCode: {
+    color: colors.primary,
     fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
+    fontWeight: "900",
+    letterSpacing: 2,
   },
-  modalDescription: {
+  helperText: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  bodyText: {
+    color: colors.text,
     fontSize: 15,
     lineHeight: 22,
-    color: "#6b7280",
-    marginBottom: 20,
   },
-  modalActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 12,
+  signOutButton: {
+    minHeight: 50,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#ef4444",
+    marginTop: 8,
   },
-  cancelModalButton: {
-    backgroundColor: "#f3f4f6",
-  },
-  cancelModalButtonText: {
-    color: "#374151",
+  signOutButtonText: {
+    color: "#ffffff",
     fontSize: 16,
-    fontWeight: "700",
-  },
-  confirmModalButton: {
-    backgroundColor: "#dc2626",
-  },
-  confirmModalButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
   },
 });

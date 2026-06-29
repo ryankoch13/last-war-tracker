@@ -1,79 +1,127 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { Tabs, useRouter } from "expo-router";
-
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { router, Tabs } from "expo-router";
 import { Pressable } from "react-native";
-import { colors } from "../../theme/colors";
+
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { colors } from "@/theme/colors";
+
+type TabBarIconProps = {
+  color: string;
+  size: number;
+};
+
+function SettingsButton() {
+  return (
+    <Pressable
+      onPress={() => router.push("/settings")}
+      style={({ pressed }) => ({
+        paddingHorizontal: 16,
+        opacity: pressed ? 0.6 : 1,
+      })}
+      hitSlop={12}
+    >
+      <MaterialCommunityIcons
+        name="cog-outline"
+        size={24}
+        color={colors.text}
+      />
+    </Pressable>
+  );
+}
 
 export default function TabsLayout() {
-  const router = useRouter();
-
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
-        headerStyle: {
-          backgroundColor: colors.surface,
-        },
-        headerTitleStyle: {
-          color: colors.text,
-          fontWeight: "800",
-        },
-        headerRight: () => (
-          <Pressable
-            onPress={() => router.push("/settings")}
-            hitSlop={10}
-            style={({ pressed }) => ({
-              marginRight: 16,
-              opacity: pressed ? 0.5 : 1,
-            })}
-          >
-            <Ionicons name="settings-outline" size={24} color="#111" />
-          </Pressable>
-        ),
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
-          ),
+    <RequireActiveAlliance>
+      <Tabs
+        screenOptions={{
+          headerShown: true,
+          headerTitleStyle: {
+            color: colors.text,
+            fontWeight: "800",
+          },
+          headerStyle: {
+            backgroundColor: colors.background,
+          },
+          headerShadowVisible: false,
+          headerRight: () => <SettingsButton />,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.muted,
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopColor: "rgba(0,0,0,0.08)",
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: "700",
+          },
         }}
-      />
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="view-dashboard-outline"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="members"
-        options={{
-          title: "Members",
-          tabBarLabel: "Members",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
-          ),
-          headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="events"
-        options={{
-          title: "Events",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        <Tabs.Screen
+          name="members"
+          options={{
+            title: "Members",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="account-group-outline"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="trains"
-        options={{
-          title: "Trains",
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="train" size={size} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+        <Tabs.Screen
+          name="trains"
+          options={{
+            title: "Trains",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons name="train" size={size} color={color} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="events"
+          options={{
+            title: "Events",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="calendar-star"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="stats"
+          options={{
+            title: "Stats",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="chart-line"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+    </RequireActiveAlliance>
   );
 }
