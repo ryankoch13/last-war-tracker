@@ -11,8 +11,11 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+
+import { joinAllianceByInviteCode } from "@/lib/allianceSetup";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useActiveAlliance } from "@/hooks/useActiveAlliance";
@@ -44,6 +47,13 @@ function SettingsContent() {
   const [signingOut, setSigningOut] = useState(false);
   const [copying, setCopying] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [joinInviteCode, setJoinInviteCode] = useState("");
+  const [joinMemberName, setJoinMemberName] = useState("");
+  const [joiningAlliance, setJoiningAlliance] = useState(false);
+
+  const loadActiveAlliance = useAllianceStore(
+    (state) => state.loadActiveAlliance,
+  );
 
   const inviteCode = activeAlliance?.inviteCode ?? "";
   const allianceName = activeAlliance?.name ?? "Your Alliance";
@@ -97,6 +107,34 @@ function SettingsContent() {
       );
     } finally {
       setSharing(false);
+    }
+  }
+
+  async function onJoinAllianceFromSettings() {
+    try {
+      setJoiningAlliance(true);
+
+      await joinAllianceByInviteCode(joinInviteCode, joinMemberName);
+
+      await loadActiveAlliance();
+
+      Alert.alert("Joined Alliance", "You joined the alliance successfully.", [
+        {
+          text: "OK",
+          onPress: () => router.replace("/(tabs)"),
+        },
+      ]);
+    } catch (error) {
+      console.error("JOIN ALLIANCE ERROR:", error);
+
+      Alert.alert(
+        "Could Not Join Alliance",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while joining the alliance.",
+      );
+    } finally {
+      setJoiningAlliance(false);
     }
   }
 
@@ -216,6 +254,46 @@ function SettingsContent() {
             <ActivityIndicator color="#dc2626" />
           ) : (
             <Text style={styles.dangerButtonText}>Sign Out</Text>
+          )}
+        </Pressable>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Join Another Alliance</Text>
+
+        <Text style={styles.description}>
+          If you joined or created the wrong alliance during setup, enter an
+          invite code here to join the correct one.
+        </Text>
+
+        <TextInput
+          value={joinInviteCode}
+          onChangeText={setJoinInviteCode}
+          placeholder="Invite code"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          style={styles.input}
+        />
+
+        <TextInput
+          value={joinMemberName}
+          onChangeText={setJoinMemberName}
+          placeholder="Your in-game name"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="words"
+          autoCorrect={false}
+          style={styles.input}
+        />
+
+        <Pressable
+          style={[styles.button, joiningAlliance && styles.buttonDisabled]}
+          onPress={onJoinAllianceFromSettings}
+          disabled={joiningAlliance}
+        >
+          {joiningAlliance ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <Text style={styles.buttonText}>Join Alliance</Text>
           )}
         </Pressable>
       </View>
@@ -351,5 +429,56 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.55,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+
+  description: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+
+  input: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    color: colors.text,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+
+  button: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+
+  buttonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "700",
   },
 });
