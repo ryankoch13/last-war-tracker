@@ -1,120 +1,127 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Redirect, router, Tabs } from "expo-router";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { router, Tabs } from "expo-router";
+import { Pressable } from "react-native";
 
-import { useActiveAlliance } from "../../hooks/useActiveAlliance";
-import { useAuthSession } from "../../hooks/useAuthSession";
-import { colors } from "../../theme/colors";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { colors } from "@/theme/colors";
 
-function SettingsHeaderButton() {
+type TabBarIconProps = {
+  color: string;
+  size: number;
+};
+
+function SettingsButton() {
   return (
     <Pressable
       onPress={() => router.push("/settings")}
+      style={({ pressed }) => ({
+        paddingHorizontal: 16,
+        opacity: pressed ? 0.6 : 1,
+      })}
       hitSlop={12}
-      style={{ paddingHorizontal: 12 }}
     >
-      <Ionicons name="settings-outline" size={24} color="#111827" />
+      <MaterialCommunityIcons
+        name="cog-outline"
+        size={24}
+        color={colors.text}
+      />
     </Pressable>
   );
 }
 
 export default function TabsLayout() {
-  const { loading: authLoading, isSignedIn } = useAuthSession();
-  const {
-    loading: allianceLoading,
-    hasLoaded: allianceHasLoaded,
-    hasActiveAlliance,
-  } = useActiveAlliance();
-
-  if (authLoading || allianceLoading || !allianceHasLoaded) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
-
-  if (!isSignedIn) {
-    return <Redirect href="/sign-in" />;
-  }
-
-  if (!hasActiveAlliance) {
-    return <Redirect href="/alliance-setup" />;
-  }
-
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
-        headerStyle: {
-          backgroundColor: colors.surface,
-        },
-        headerTitleStyle: {
-          color: colors.text,
-          fontWeight: "800",
-        },
-        headerRight: () => <SettingsHeaderButton />,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
-          ),
+    <RequireActiveAlliance>
+      <Tabs
+        screenOptions={{
+          headerShown: true,
+          headerTitleStyle: {
+            color: colors.text,
+            fontWeight: "800",
+          },
+          headerStyle: {
+            backgroundColor: colors.background,
+          },
+          headerShadowVisible: false,
+          headerRight: () => <SettingsButton />,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.muted,
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopColor: "rgba(0,0,0,0.08)",
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: "700",
+          },
         }}
-      />
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="view-dashboard-outline"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="members"
-        options={{
-          title: "Members",
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        <Tabs.Screen
+          name="members"
+          options={{
+            title: "Members",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="account-group-outline"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="events/index"
-        options={{
-          title: "Events",
-          tabBarLabel: "Events",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        <Tabs.Screen
+          name="trains"
+          options={{
+            title: "Trains",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons name="train" size={size} color={color} />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="trains/index"
-        options={{
-          title: "Trains",
-          tabBarLabel: "Trains",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="train-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        <Tabs.Screen
+          name="events"
+          options={{
+            title: "Events",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="calendar-star"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="events/create"
-        options={{
-          href: null,
-          title: "Create Event",
-        }}
-      />
-
-      <Tabs.Screen
-        name="trains/create"
-        options={{
-          href: null,
-          title: "Create Train",
-        }}
-      />
-    </Tabs>
+        <Tabs.Screen
+          name="stats"
+          options={{
+            title: "Stats",
+            tabBarIcon: ({ color, size }: TabBarIconProps) => (
+              <MaterialCommunityIcons
+                name="chart-line"
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+    </RequireActiveAlliance>
   );
 }

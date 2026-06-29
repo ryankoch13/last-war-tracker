@@ -1,445 +1,649 @@
-// app/(tabs)/members/stats.tsx
-
-import { useEffect, useMemo, useState } from "react";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
+import { AppButton } from "@/components/AppButton";
+import { DailyMemberStat, useAllianceStore } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
-import { RequireActiveAlliance } from "../../../components/RequireActiveAlliance";
-import { useMyDailyStats } from "../../../hooks/useMyDailyStats";
+import type { AllianceMember } from "@/types/alliance";
 
-function getTodayDateString() {
+type StatFormState = {
+  editingStatId?: string;
+  date: string;
+  versusPoints: string;
+  donations: string;
+  notes: string;
+};
+
+function getTodayDateKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function onlyNumbers(value: string) {
-  return value.replace(/[^0-9]/g, "");
+function getLastSevenDateKeys() {
+  const dates: string[] = [];
+
+  for (let i = 6; i >= 0; i -= 1) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    dates.push(date.toISOString().slice(0, 10));
+  }
+
+  return dates;
 }
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
 }
 
-export default function MemberStatsScreen() {
-  return (
-    <RequireActiveAlliance>
-      {({ activeAllianceId }) => (
-        <MemberStatsContent allianceId={activeAllianceId} />
-      )}
-    </RequireActiveAlliance>
-  );
+function getMemberDisplayName(member?: AllianceMember) {
+  if (!member) {
+    return "Member";
+  }
+
+  return member.username;
 }
 
-type MemberStatsContentProps = {
-  allianceId: string;
+const emptyForm: StatFormState = {
+  date: getTodayDateKey(),
+  versusPoints: "",
+  donations: "",
+  notes: "",
 };
 
-function MemberStatsContent({ allianceId }: MemberStatsContentProps) {
-  const [date, setDate] = useState(getTodayDateString());
-  const [donations, setDonations] = useState("");
-  const [versusPoints, setVersusPoints] = useState("");
+export default function MemberStatsScreen() {
+  const params = useLocalSearchParams<{
+    memberId?: string | string[];
+  }>();
 
-  const { stats, loading, saving, refreshing, error, refresh, saveStats } =
-    useMyDailyStats(allianceId);
+  const routeMemberId = getParamValue(params.memberId);
 
-  const selectedEntry = useMemo(() => {
-    return stats.find((row) => row.date === date) ?? null;
-  }, [stats, date]);
+  const members = useAllianceStore((state) => state.members);
+  const dailyStats = useAllianceStore((state) => state.dailyStats);
 
-  const recentStats = useMemo(() => {
-    return [...stats].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
-  }, [stats]);
+  const addDailyStat = useAllianceStore((state) => state.addDailyStat);
+  const updateDailyStat = useAllianceStore((state) => state.updateDailyStat);
+  const deleteDailyStat = useAllianceStore((state) => state.deleteDailyStat);
 
-  useEffect(() => {
-    if (!selectedEntry) {
-      setDonations("");
-      setVersusPoints("");
-      return;
+  const selectedMember = useMemo(() => {
+    if (routeMemberId) {
+      return members.find((member) => member.id === routeMemberId);
     }
 
-    setDonations(String(selectedEntry.donations ?? 0));
-    setVersusPoints(String(selectedEntry.versus_points ?? 0));
-  }, [selectedEntry]);
+    return members[0];
+  }, [members, routeMemberId]);
 
-  async function handleSave() {
-    const donationValue = Number(donations || 0);
-    const versusValue = Number(versusPoints || 0);
+  const selectedMemberId = selectedMember?.id;
 
-    if (!date.trim()) {
-      Alert.alert("Missing date", "Please enter a date.");
-      return;
+  const memberStats = useMemo(() => {
+    if (!selectedMemberId) {
+      return [];
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      Alert.alert("Invalid date", "Use the format YYYY-MM-DD.");
-      return;
-    }
+    return dailyStats
+      .filter((stat) => stat.memberId === selectedMemberId)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [dailyStats, selectedMemberId]);
 
-    if (Number.isNaN(donationValue) || Number.isNaN(versusValue)) {
-      Alert.alert("Invalid stats", "Please enter valid numbers.");
-      return;
-    }
+  const weeklyDateKeys = useMemo(() => getLastSevenDateKeys(), []);
 
-    try {
-      await saveStats({
-        date,
-        donations: donationValue,
-        versusPoints: versusValue,
-      });
+  const statsByDate = useMemo(() => {
+    const map = new Map<string, DailyMemberStat>();
 
-      Alert.alert("Saved", "Your stats were updated.");
-    } catch (err) {
-      Alert.alert(
-        "Could not save stats",
-        err instanceof Error ? err.message : "Something went wrong.",
-      );
-    }
-  }
+    memberStats.forEach((stat) => {
+      map.set(stat.date, stat);
+    });
 
-  function handleSelectEntry(entryDate: string) {
-    setDate(entryDate);
-  }
+    return map;
+  }, [memberStats]);
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading your stats...</Text>
-      </View>
+  const totals = useMemo(() => {
+    return memberStats.reduce(
+      (acc, stat) => {
+        acc.versusPoints += stat.versusPoints;
+        acc.donations += stat.donations;
+        return acc;
+      },
+      {
+        versusPoints: 0,
+        donations: 0,
+      },
     );
+  }, [memberStats]);
+
+  const [form, setForm] = useState<StatFormState>(emptyForm);
+
+  function resetForm() {
+    setForm({
+      ...emptyForm,
+      date: getTodayDateKey(),
+    });
+  }
+
+  function startEditingStat(stat: DailyMemberStat) {
+    setForm({
+      editingStatId: stat.id,
+      date: stat.date,
+      versusPoints: String(stat.versusPoints),
+      donations: String(stat.donations),
+      notes: stat.notes ?? "",
+    });
+  }
+
+  function saveStat() {
+    if (!selectedMemberId) {
+      Alert.alert("No member selected", "Create or select a member first.");
+      return;
+    }
+
+    const trimmedDate = form.date.trim();
+
+    if (!trimmedDate) {
+      Alert.alert("Missing date", "Enter a date for this stat.");
+      return;
+    }
+
+    const versusPoints = Number(form.versusPoints || 0);
+    const donations = Number(form.donations || 0);
+
+    if (Number.isNaN(versusPoints) || Number.isNaN(donations)) {
+      Alert.alert(
+        "Invalid values",
+        "Versus points and donations must be numbers.",
+      );
+      return;
+    }
+
+    if (versusPoints < 0 || donations < 0) {
+      Alert.alert("Invalid values", "Values cannot be negative.");
+      return;
+    }
+
+    const existingStatForDate = memberStats.find(
+      (stat) => stat.date === trimmedDate,
+    );
+
+    if (form.editingStatId) {
+      updateDailyStat(form.editingStatId, {
+        memberId: selectedMemberId,
+        date: trimmedDate,
+        versusPoints,
+        donations,
+        notes: form.notes.trim(),
+      });
+    } else if (existingStatForDate) {
+      updateDailyStat(existingStatForDate.id, {
+        versusPoints,
+        donations,
+        notes: form.notes.trim(),
+      });
+    } else {
+      addDailyStat({
+        memberId: selectedMemberId,
+        date: trimmedDate,
+        versusPoints,
+        donations,
+        notes: form.notes.trim(),
+      });
+    }
+
+    resetForm();
+  }
+
+  function confirmDeleteStat(stat: DailyMemberStat) {
+    Alert.alert("Delete stat?", "This will remove this daily entry.", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => deleteDailyStat(stat.id),
+      },
+    ]);
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <>
+      <Stack.Screen
+        options={{
+          title: `${getMemberDisplayName(selectedMember)} Stats`,
+        }}
+      />
+
       <ScrollView
-        style={styles.screen}
+        style={styles.container}
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-        }
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>My Daily Stats</Text>
-          <Text style={styles.subtitle}>
-            Update your donations and VS points.
-          </Text>
-        </View>
-
-        {error ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Something went wrong</Text>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              {selectedEntry ? "Edit Entry" : "New Entry"}
-            </Text>
-
-            {selectedEntry ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>Existing</Text>
-              </View>
-            ) : null}
-          </View>
-
-          <Text style={styles.label}>Date</Text>
-          <TextInput
-            value={date}
-            onChangeText={setDate}
-            placeholder="YYYY-MM-DD"
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-            placeholderTextColor={colors.muted}
-          />
-
-          <Text style={styles.label}>Alliance Donations</Text>
-          <TextInput
-            value={donations}
-            onChangeText={(value) => setDonations(onlyNumbers(value))}
-            placeholder="0"
-            keyboardType="numeric"
-            style={styles.input}
-            placeholderTextColor={colors.muted}
-          />
-
-          <Text style={styles.label}>VS Points</Text>
-          <TextInput
-            value={versusPoints}
-            onChangeText={(value) => setVersusPoints(onlyNumbers(value))}
-            placeholder="0"
-            keyboardType="numeric"
-            style={styles.input}
-            placeholderTextColor={colors.muted}
-          />
-
-          <Pressable
-            onPress={handleSave}
-            disabled={saving}
-            style={[styles.saveButton, saving && styles.disabledButton]}
-          >
-            <Text style={styles.saveButtonText}>
-              {saving ? "Saving..." : "Save Stats"}
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <SummaryCard label="Entries" value={String(stats.length)} />
-
-          <SummaryCard
-            label="Total Donations"
-            value={formatNumber(
-              stats.reduce((total, row) => total + (row.donations ?? 0), 0),
-            )}
-          />
-
-          <SummaryCard
-            label="Total VS"
-            value={formatNumber(
-              stats.reduce((total, row) => total + (row.versus_points ?? 0), 0),
-            )}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Entries</Text>
-          <Text style={styles.mutedText}>Tap an entry to edit it.</Text>
-        </View>
-
-        {recentStats.length === 0 ? (
+        {!selectedMember ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No stats yet</Text>
-            <Text style={styles.mutedText}>
-              Add today&apos;s donations and VS points to get started.
+            <Text style={styles.emptyTitle}>No member selected</Text>
+            <Text style={styles.emptyText}>
+              Add a member first, then come back here to enter daily VS points
+              and donations.
             </Text>
           </View>
         ) : (
-          recentStats.map((entry) => (
-            <Pressable
-              key={`${entry.member_id}-${entry.date}`}
-              style={[
-                styles.entryCard,
-                entry.date === date && styles.selectedEntryCard,
-              ]}
-              onPress={() => handleSelectEntry(entry.date)}
-            >
-              <View>
-                <Text style={styles.entryDate}>{entry.date}</Text>
-                <Text style={styles.mutedText}>
-                  Donations: {formatNumber(entry.donations ?? 0)}
-                </Text>
-              </View>
+          <>
+            <View style={styles.headerCard}>
+              <Text style={styles.title}>{selectedMember.username}</Text>
+              <Text style={styles.subtitle}>
+                Track daily versus points and alliance donations.
+              </Text>
 
-              <View style={styles.entryRight}>
-                <Text style={styles.entryPoints}>
-                  {formatNumber(entry.versus_points ?? 0)}
-                </Text>
-                <Text style={styles.mutedText}>VS Points</Text>
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>Total VS</Text>
+                  <Text style={styles.summaryValue}>
+                    {totals.versusPoints.toLocaleString()}
+                  </Text>
+                </View>
+
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>Total Donations</Text>
+                  <Text style={styles.summaryValue}>
+                    {totals.donations.toLocaleString()}
+                  </Text>
+                </View>
               </View>
-            </Pressable>
-          ))
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>This Week</Text>
+
+              <View style={styles.weekGrid}>
+                {weeklyDateKeys.map((dateKey) => {
+                  const stat = statsByDate.get(dateKey);
+
+                  return (
+                    <Pressable
+                      key={dateKey}
+                      onPress={() =>
+                        stat
+                          ? startEditingStat(stat)
+                          : setForm({
+                              ...emptyForm,
+                              date: dateKey,
+                            })
+                      }
+                      style={({ pressed }) => [
+                        styles.dayCard,
+                        stat && styles.dayCardFilled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.dayDate}>{dateKey.slice(5)}</Text>
+                      <Text style={styles.dayValue}>
+                        VS: {stat?.versusPoints.toLocaleString() ?? "—"}
+                      </Text>
+                      <Text style={styles.dayValue}>
+                        Don: {stat?.donations.toLocaleString() ?? "—"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>
+                {form.editingStatId ? "Edit Daily Entry" : "Add Daily Entry"}
+              </Text>
+
+              <View style={styles.formCard}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Date</Text>
+                  <TextInput
+                    value={form.date}
+                    onChangeText={(date) =>
+                      setForm((current) => ({
+                        ...current,
+                        date,
+                      }))
+                    }
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.muted}
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Versus Points</Text>
+                  <TextInput
+                    value={form.versusPoints}
+                    onChangeText={(versusPoints) =>
+                      setForm((current) => ({
+                        ...current,
+                        versusPoints,
+                      }))
+                    }
+                    placeholder="0"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Donations</Text>
+                  <TextInput
+                    value={form.donations}
+                    onChangeText={(donations) =>
+                      setForm((current) => ({
+                        ...current,
+                        donations,
+                      }))
+                    }
+                    placeholder="0"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Notes</Text>
+                  <TextInput
+                    value={form.notes}
+                    onChangeText={(notes) =>
+                      setForm((current) => ({
+                        ...current,
+                        notes,
+                      }))
+                    }
+                    placeholder="Optional notes..."
+                    placeholderTextColor={colors.muted}
+                    multiline
+                    style={[styles.input, styles.notesInput]}
+                  />
+                </View>
+
+                <AppButton
+                  title={form.editingStatId ? "Update Entry" : "Save Entry"}
+                  onPress={saveStat}
+                />
+
+                {form.editingStatId ? (
+                  <Pressable onPress={resetForm}>
+                    <Text style={styles.cancelText}>Cancel Edit</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>History</Text>
+
+              {memberStats.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyText}>
+                    No stats recorded yet. Add the first daily entry above.
+                  </Text>
+                </View>
+              ) : (
+                memberStats.map((stat) => (
+                  <View key={stat.id} style={styles.statCard}>
+                    <View>
+                      <Text style={styles.statDate}>{stat.date}</Text>
+                      <Text style={styles.statMeta}>
+                        VS {stat.versusPoints.toLocaleString()} · Donations{" "}
+                        {stat.donations.toLocaleString()}
+                      </Text>
+
+                      {!!stat.notes?.trim() && (
+                        <Text style={styles.notesText}>
+                          {stat.notes.trim()}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={styles.actionsRow}>
+                      <SmallButton
+                        title="Edit"
+                        onPress={() => startEditingStat(stat)}
+                      />
+                      <SmallButton
+                        title="Delete"
+                        variant="danger"
+                        onPress={() => confirmDeleteStat(stat)}
+                      />
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </>
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
-type SummaryCardProps = {
-  label: string;
-  value: string;
-};
-
-function SummaryCard({ label, value }: SummaryCardProps) {
+function SmallButton({
+  title,
+  variant = "default",
+  onPress,
+}: {
+  title: string;
+  variant?: "default" | "danger";
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.summaryCard}>
-      <Text style={styles.summaryValue}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.smallButton,
+        variant === "danger" && styles.dangerButton,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text
+        style={[
+          styles.smallButtonText,
+          variant === "danger" && styles.dangerButtonText,
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
-    paddingBottom: 32,
-    gap: 16,
+    gap: 18,
   },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    gap: 8,
-  },
-  header: {
-    gap: 4,
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 12,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "800",
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
   },
   subtitle: {
-    fontSize: 15,
-    opacity: 0.65,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: "#e5e5e5",
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  badge: {
-    backgroundColor: "#f3f0ff",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  badgeText: {
-    color: "#6d28d9",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#d4d4d4",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    fontSize: 16,
-  },
-  saveButton: {
-    backgroundColor: "#6d28d9",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 6,
-  },
-  disabledButton: {
-    opacity: 0.55,
-  },
-  saveButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "800",
+    color: colors.muted,
+    lineHeight: 20,
   },
   summaryRow: {
     flexDirection: "row",
     gap: 10,
   },
-  summaryCard: {
+  summaryBox: {
     flex: 1,
+    backgroundColor: colors.background,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#e5e5e5",
-    borderRadius: 16,
+    borderColor: colors.border,
     padding: 12,
     gap: 4,
   },
-  summaryValue: {
-    fontSize: 18,
+  summaryLabel: {
+    color: colors.muted,
+    fontSize: 12,
     fontWeight: "800",
   },
-  summaryLabel: {
-    fontSize: 12,
-    opacity: 0.65,
+  summaryValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
   },
-  sectionHeader: {
-    gap: 2,
+  section: {
+    gap: 10,
   },
   sectionTitle: {
+    color: colors.text,
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
   },
-  entryCard: {
+  weekGrid: {
+    gap: 8,
+  },
+  dayCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#e5e5e5",
-    borderRadius: 16,
-    padding: 14,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 4,
+  },
+  dayCardFilled: {
+    borderColor: colors.primary,
+  },
+  dayDate: {
+    color: colors.text,
+    fontWeight: "900",
+  },
+  dayValue: {
+    color: colors.muted,
+    fontWeight: "700",
+  },
+  formCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 12,
+  },
+  field: {
+    gap: 6,
+  },
+  label: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  input: {
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    color: colors.text,
+    paddingHorizontal: 12,
+    fontWeight: "700",
+  },
+  notesInput: {
+    minHeight: 90,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  statCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 12,
+  },
+  statDate: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  statMeta: {
+    color: colors.muted,
+    marginTop: 2,
+    fontWeight: "700",
+  },
+  notesText: {
+    color: colors.muted,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  actionsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 10,
+  },
+  smallButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  selectedEntryCard: {
-    borderColor: "#6d28d9",
-    backgroundColor: "#f8f5ff",
+  smallButtonText: {
+    color: colors.text,
+    fontWeight: "900",
   },
-  entryDate: {
-    fontSize: 16,
+  dangerButton: {
+    backgroundColor: "#fee2e2",
+    borderColor: "#fecaca",
+  },
+  dangerButtonText: {
+    color: "#b91c1c",
+  },
+  cancelText: {
+    color: colors.muted,
     fontWeight: "800",
-    marginBottom: 2,
-  },
-  entryRight: {
-    alignItems: "flex-end",
-  },
-  entryPoints: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  mutedText: {
-    fontSize: 14,
-    opacity: 0.65,
+    textAlign: "center",
+    marginTop: 4,
   },
   emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#e5e5e5",
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
-    gap: 4,
+    borderColor: colors.border,
+    padding: 16,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "800",
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "900",
+    marginBottom: 6,
   },
-  errorCard: {
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    borderRadius: 16,
-    padding: 14,
-    gap: 4,
+  emptyText: {
+    color: colors.muted,
+    lineHeight: 20,
   },
-  errorTitle: {
-    color: "#991b1b",
-    fontWeight: "800",
-  },
-  errorText: {
-    color: "#991b1b",
+  pressed: {
+    opacity: 0.65,
   },
 });

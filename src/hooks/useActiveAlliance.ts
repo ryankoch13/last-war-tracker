@@ -1,37 +1,70 @@
+import { AllianceRole, useAllianceStore } from "@/store/allianceStore";
 import { useEffect } from "react";
 
-import { useAllianceStore } from "../store/allianceStore";
-
 export function useActiveAlliance() {
-  const alliance = useAllianceStore((state) => state.alliance);
+  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+  const activeAlliance = useAllianceStore((state) => state.activeAlliance);
   const allianceUser = useAllianceStore((state) => state.allianceUser);
+
+  const members = useAllianceStore((state) => state.members ?? []);
+  const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
+  const trainAssignments = useAllianceStore(
+    (state) => state.trainAssignments ?? [],
+  );
+  const events = useAllianceStore((state) => state.events ?? []);
+
   const loading = useAllianceStore((state) => state.loading);
-  const hasLoaded = useAllianceStore((state) => state.hasLoaded);
   const error = useAllianceStore((state) => state.error);
-  const loadAlliance = useAllianceStore((state) => state.loadAlliance);
+  const hasLoaded = useAllianceStore((state) => state.hasLoaded);
+  const loadActiveAlliance = useAllianceStore(
+    (state) => state.loadActiveAlliance,
+  );
 
   useEffect(() => {
     if (!hasLoaded && !loading) {
-      loadAlliance();
+      void loadActiveAlliance();
     }
-  }, [hasLoaded, loading, loadAlliance]);
+  }, [hasLoaded, loading, loadActiveAlliance]);
 
   return {
-    alliance,
+    activeAllianceId,
+    activeAlliance,
     allianceUser,
 
-    activeAlliance: alliance,
-    activeAllianceId: alliance?.id ?? null,
+    members,
+    dailyStats,
+    trainAssignments,
+    events,
 
     loading,
-    hasLoaded,
     error,
-    hasActiveAlliance: !!alliance,
+    hasLoaded,
+
+    hasActiveAlliance: Boolean(activeAllianceId && activeAlliance),
+
+    canManageAlliance:
+      allianceUser?.role === AllianceRole.R4 ||
+      allianceUser?.role === AllianceRole.R5,
   };
 }
 
 export function useActiveAllianceId() {
-  const alliance = useAllianceStore((state) => state.alliance);
+  return useAllianceStore((state) => state.activeAllianceId);
+}
 
-  return alliance?.id ?? null;
+export function useAllianceUser() {
+  return useAllianceStore((state) => state.allianceUser);
+}
+
+export function useCanManageAlliance() {
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
+
+  const role = allianceUser?.role?.toUpperCase();
+
+  return (
+    role === AllianceRole.R4 ||
+    role === AllianceRole.R5 ||
+    role === "ADMIN" ||
+    role === "OWNER"
+  );
 }

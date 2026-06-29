@@ -1,1 +1,5 @@
-export { TrainBoardScreen as default } from "../../../screens/trains/TrainBoardScreen";
+import { TrainBoardScreen } from "../../../screens/trains/TrainBoardScreen";
+
+export default function TrainsRoute() {
+  return <TrainBoardScreen />;
+}
