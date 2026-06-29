@@ -1,9 +1,17 @@
+<<<<<<< HEAD
 import { Ionicons } from "@expo/vector-icons";
 import { Redirect, router, Tabs } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 
 import { useActiveAlliance } from "../../hooks/useActiveAlliance";
 import { useAuthSession } from "../../hooks/useAuthSession";
+=======
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { Tabs, useRouter } from "expo-router";
+
+import { Pressable } from "react-native";
+>>>>>>> main
 import { colors } from "../../theme/colors";
 
 function SettingsHeaderButton() {
@@ -19,6 +27,7 @@ function SettingsHeaderButton() {
 }
 
 export default function TabsLayout() {
+<<<<<<< HEAD
   const { loading: authLoading, isSignedIn } = useAuthSession();
   const {
     loading: allianceLoading,
@@ -41,6 +50,9 @@ export default function TabsLayout() {
   if (!hasActiveAlliance) {
     return <Redirect href="/alliance-setup" />;
   }
+=======
+  const router = useRouter();
+>>>>>>> main
 
   return (
     <Tabs
@@ -54,7 +66,22 @@ export default function TabsLayout() {
           color: colors.text,
           fontWeight: "800",
         },
+<<<<<<< HEAD
         headerRight: () => <SettingsHeaderButton />,
+=======
+        headerRight: () => (
+          <Pressable
+            onPress={() => router.push("/settings")}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              marginRight: 16,
+              opacity: pressed ? 0.5 : 1,
+            })}
+          >
+            <Ionicons name="settings-outline" size={24} color="#111" />
+          </Pressable>
+        ),
+>>>>>>> main
       }}
     >
       <Tabs.Screen
@@ -71,13 +98,13 @@ export default function TabsLayout() {
         name="members"
         options={{
           title: "Members",
-          headerShown: false,
+          tabBarLabel: "Members",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),
+          headerShown: false,
         }}
       />
-
       <Tabs.Screen
         name="events/index"
         options={{

@@ -1,4 +1,5 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
@@ -9,12 +10,37 @@ import { formatCompactNumber, formatNumber } from "../../utils/format";
 
 export function MemberDetailScreen() {
   const router = useRouter();
-  const { memberId } = useLocalSearchParams<{ memberId: string }>();
+  const params = useLocalSearchParams<{ memberId?: string | string[] }>();
 
-  const member = useAllianceStore((state) =>
-    memberId ? state.getMemberById(memberId) : undefined,
-  );
+  const memberId = Array.isArray(params.memberId)
+    ? params.memberId[0]
+    : params.memberId;
+
+  const members = useAllianceStore((state) => state.members);
+  const dailyStats = useAllianceStore((state) => state.dailyStats);
   const deleteMember = useAllianceStore((state) => state.deleteMember);
+
+  const member = useMemo(() => {
+    if (!memberId) return undefined;
+    return members.find((item) => item.id === memberId);
+  }, [members, memberId]);
+
+  const memberDailyStats = useMemo(() => {
+    if (!memberId) return [];
+
+    return dailyStats
+      .filter((stat) => stat.memberId === memberId)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [dailyStats, memberId]);
+
+  const totalVs = useMemo(() => {
+    return memberDailyStats.reduce((total, stat) => total + stat.weeklyVs, 0);
+  }, [memberDailyStats]);
+
+  const totalDonations = useMemo(() => {
+    return memberDailyStats.reduce((total, stat) => total + stat.donations, 0);
+  }, [memberDailyStats]);
 
   if (!member) {
     return (
@@ -45,6 +71,7 @@ export function MemberDetailScreen() {
     );
   }
 
+<<<<<<< HEAD
   return (
     <RequireActiveAlliance>
       <ScrollView
@@ -105,13 +132,112 @@ export function MemberDetailScreen() {
           }
         />
 
+=======
+  if (!member) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: "Member not found",
+          }}
+        />
+
+        <View style={styles.center}>
+          <Text style={styles.title}>Member not found</Text>
+        </View>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Stack.Screen
+        options={{
+          title: member.username,
+        }}
+      />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View style={styles.card}>
+          <Text style={styles.username}>{member.username}</Text>
+          <Text style={styles.meta}>
+            {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
+          </Text>
+        </View>
+
+        <View style={styles.grid}>
+          <Info label="Power" value={formatCompactNumber(member.power)} />
+          <Info label="HQ Level" value={member.hqLevel.toString()} />
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Daily History</Text>
+
+          {memberDailyStats.length === 0 ? (
+            <Text style={styles.notes}>No daily stats recorded yet.</Text>
+          ) : (
+            memberDailyStats.map((stat) => (
+              <View key={stat.id} style={styles.historyRow}>
+                <Text style={styles.historyDate}>{stat.date}</Text>
+                <Text style={styles.historyText}>
+                  VS: {formatCompactNumber(stat.weeklyVs)}
+                </Text>
+                <Text style={styles.historyText}>
+                  Donations: {formatNumber(stat.donations)}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.username}>{member.username}</Text>
+          <Text style={styles.meta}>
+            {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>R4 Notes</Text>
+          <Text style={styles.notes}>
+            {member.notes?.trim() || "No notes yet."}
+          </Text>
+        </View>
+        <AppButton
+          title="Update Daily Stats"
+          onPress={() =>
+            router.push({
+              pathname: "/members/stats",
+              params: {
+                memberId: member.id,
+              },
+            })
+          }
+        />
+        <AppButton
+          title="Edit Member"
+          onPress={() =>
+            router.push({
+              pathname: "/members/edit",
+              params: {
+                memberId: member.id,
+              },
+            })
+          }
+        />
+
+>>>>>>> main
         <AppButton
           title="Delete Member"
           variant="danger"
           onPress={confirmDelete}
         />
       </ScrollView>
+<<<<<<< HEAD
     </RequireActiveAlliance>
+=======
+    </>
+>>>>>>> main
   );
 }
 
@@ -190,5 +316,19 @@ const styles = StyleSheet.create({
   notes: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  historyRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    marginTop: 10,
+    gap: 2,
+  },
+  historyDate: {
+    color: colors.text,
+    fontWeight: "800",
+  },
+  historyText: {
+    color: colors.muted,
   },
 });

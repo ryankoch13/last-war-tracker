@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // app/(tabs)/members/stats.tsx
 
 import { useEffect, useMemo, useState } from "react";
@@ -443,3 +444,10 @@ const styles = StyleSheet.create({
     color: "#991b1b",
   },
 });
+=======
+import { MemberStatsScreen } from "../../../screens/members/MemberStatsScreen";
+
+export default function MemberStatsRoute() {
+  return <MemberStatsScreen />;
+}
+>>>>>>> main

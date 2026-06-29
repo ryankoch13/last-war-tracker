@@ -7,10 +7,14 @@ import {
   View,
 } from "react-native";
 
+<<<<<<< HEAD
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { getAllianceEvents } from "@/lib/allianceEvents";
 import { getTrainAssignments } from "@/lib/trainAssignments";
 import { getAllianceMembers } from "@/services/allianceMembers";
+=======
+import { TopMemberStatsCard } from "@/components/TopMemberStatsCards";
+>>>>>>> main
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
@@ -41,6 +45,7 @@ type DashboardTrain = {
 };
 
 export function DashboardScreen() {
+<<<<<<< HEAD
   const alliance = useAllianceStore((state) => state.alliance);
   const activeAllianceId = alliance?.id ?? null;
 
@@ -99,6 +104,11 @@ export function DashboardScreen() {
     };
   }, [activeAllianceId]);
 
+=======
+  const members = useAllianceStore((state) => state.members);
+  const events = useAllianceStore((state) => state.events);
+  const trains = useAllianceStore((state) => state.trains);
+>>>>>>> main
   const topVsMember = useMemo(() => {
     return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
   }, [members]);
@@ -116,6 +126,7 @@ export function DashboardScreen() {
   const totalPower = members.reduce((sum, member) => sum + member.power, 0);
 
   return (
+<<<<<<< HEAD
     <RequireActiveAlliance>
       <ScrollView
         style={styles.container}
@@ -132,6 +143,45 @@ export function DashboardScreen() {
           <View style={styles.loadingPanel}>
             <ActivityIndicator />
             <Text style={styles.emptyText}>Loading dashboard...</Text>
+=======
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View>
+        <Text style={styles.title}>Alliance Ops</Text>
+        <Text style={styles.subtitle}>
+          Roster, train, and event management for strategy game alliances.
+        </Text>
+      </View>
+      <ScrollView contentContainerStyle={styles.container}>
+        <TopMemberStatsCard />
+      </ScrollView>
+      <View style={styles.grid}>
+        <StatCard
+          label="Top VS"
+          value={topVsMember?.username ?? "—"}
+          helper={
+            topVsMember
+              ? formatCompactNumber(topVsMember.weeklyVsScore)
+              : "Load demo data"
+          }
+        />
+        <StatCard
+          label="Low Donations"
+          value={lowDonationMembers.length}
+          helper="Under 30k this week"
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Next Event</Text>
+
+        {nextEvent ? (
+          <View style={styles.panel}>
+            <Text style={styles.panelTitle}>{nextEvent.name}</Text>
+            <Text style={styles.panelText}>{nextEvent.type}</Text>
+            <Text style={styles.panelText}>
+              Starts {formatDateTime(nextEvent.date)}
+            </Text>
+>>>>>>> main
           </View>
         ) : null}
 
@@ -141,6 +191,7 @@ export function DashboardScreen() {
           </View>
         ) : null}
 
+<<<<<<< HEAD
         <View style={styles.grid}>
           <StatCard label="Members" value={members.length} />
           <StatCard
@@ -175,6 +226,17 @@ export function DashboardScreen() {
               <Text style={styles.panelText}>{nextEvent.type}</Text>
               <Text style={styles.panelText}>
                 Starts {formatDateTime(nextEvent.startsAt)}
+=======
+        {trains.length > 0 ? (
+          trains.map((train) => (
+            <View key={train.id} style={styles.panel}>
+              <Text style={styles.panelTitle}>{train.name}</Text>
+              <Text style={styles.panelText}>
+                Departure: {formatDateTime(train.date)}
+              </Text>
+              <Text style={styles.panelText}>
+                Assigned: {train.guardIds.length + train.passengerIds.length}
+>>>>>>> main
               </Text>
             </View>
           ) : (
