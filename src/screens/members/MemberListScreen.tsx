@@ -33,11 +33,22 @@ const mutedColor = theme.textMuted ?? theme.muted ?? "#64748b";
 const surfaceColor = theme.surface ?? "#ffffff";
 const borderColor = theme.border ?? "#e5e7eb";
 
-function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+export function formatCompactNumber(value: number | null | undefined) {
+  const safeValue = Number(value ?? 0);
+
+  if (!Number.isFinite(safeValue)) {
+    return "0";
+  }
+
+  if (safeValue >= 1_000_000) {
+    return `${(safeValue / 1_000_000).toFixed(1).replace(".0", "")}M`;
+  }
+
+  if (safeValue >= 1_000) {
+    return `${(safeValue / 1_000).toFixed(1).replace(".0", "")}K`;
+  }
+
+  return safeValue.toString();
 }
 
 function getDateDaysAgo(daysAgo: number) {
