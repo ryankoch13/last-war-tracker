@@ -1,465 +1,554 @@
-import { Stack, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
-import { AppButton } from "@/components/AppButton";
-import { DailyMemberStat, useAllianceStore } from "@/store/allianceStore";
-import { colors } from "@/theme/colors";
-import type { AllianceMember } from "@/types/alliance";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { AppButton } from "../../../components/AppButton";
+import { useAllianceStore } from "../../../store/allianceStore";
+import { colors } from "../../../theme/colors";
 
-type StatFormState = {
-  editingStatId?: string;
-  date: string;
-  vsScore: string;
-  donations: string;
-  notes: string;
+type ViewMode = "daily" | "weekly" | "monthly";
+type MetricMode = "vsScore" | "donations";
+
+type ChartItem = {
+  key: string;
+  label: string;
+  rangeLabel: string;
+  startDate: string;
+  endDate: string;
+  vsScore: number;
+  donations: number;
 };
 
-function getTodayDateKey() {
-  return new Date().toISOString().slice(0, 10);
-}
+const ALL_MEMBERS_ID = "__all_members__";
 
-function getLastSevenDateKeys() {
-  const dates: string[] = [];
+const VIEW_MODES: { label: string; value: ViewMode }[] = [
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
+  { label: "Monthly", value: "monthly" },
+];
 
-  for (let i = 6; i >= 0; i -= 1) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    dates.push(date.toISOString().slice(0, 10));
-  }
+const METRIC_MODES: { label: string; value: MetricMode }[] = [
+  { label: "VS Score", value: "vsScore" },
+  { label: "Donations", value: "donations" },
+];
 
-  return dates;
-}
+export function MemberStatsScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ memberId?: string | string[] }>();
 
-function getParamValue(value: string | string[] | undefined) {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
+  const routeMemberId = Array.isArray(params.memberId)
+    ? params.memberId[0]
+    : params.memberId;
 
-  return value;
-}
+  const members = useAllianceStore((state) => state.members ?? []);
+  const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
 
-function getMemberDisplayName(member?: AllianceMember) {
-  if (!member) {
-    return "Member";
-  }
+  const [selectedMemberId, setSelectedMemberId] = useState(
+    routeMemberId ?? ALL_MEMBERS_ID,
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>("daily");
+  const [metricMode, setMetricMode] = useState<MetricMode>("vsScore");
 
-  return member.username;
-}
-
-const emptyForm: StatFormState = {
-  date: getTodayDateKey(),
-  vsScore: "",
-  donations: "",
-  notes: "",
-};
-
-export default function MemberStatsScreen() {
-  const params = useLocalSearchParams<{
-    memberId?: string | string[];
-  }>();
-
-  const routeMemberId = getParamValue(params.memberId);
-
-  const members = useAllianceStore((state) => state.members);
-  const dailyStats = useAllianceStore((state) => state.dailyStats);
-
-  const addDailyStat = useAllianceStore((state) => state.addDailyStat);
-  const updateDailyStat = useAllianceStore((state) => state.updateDailyStat);
-  const deleteDailyStat = useAllianceStore((state) => state.deleteDailyStat);
+  useEffect(() => {
+    if (routeMemberId) {
+      setSelectedMemberId(routeMemberId);
+    }
+  }, [routeMemberId]);
 
   const selectedMember = useMemo(() => {
-    if (routeMemberId) {
-      return members.find((member) => member.id === routeMemberId);
+    if (selectedMemberId === ALL_MEMBERS_ID) return undefined;
+
+    return members.find((member) => member.id === selectedMemberId);
+  }, [members, selectedMemberId]);
+
+  const filteredStats = useMemo(() => {
+    if (selectedMemberId === ALL_MEMBERS_ID) {
+      return dailyStats;
     }
 
-    return members[0];
-  }, [members, routeMemberId]);
-
-  const selectedMemberId = selectedMember?.id;
-
-  const memberStats = useMemo(() => {
-    if (!selectedMemberId) {
-      return [];
-    }
-
-    return dailyStats
-      .filter((stat) => stat.memberId === selectedMemberId)
-      .slice()
-      .sort((a, b) => b.date.localeCompare(a.date));
+    return dailyStats.filter(
+      (stat) => getStatMemberId(stat) === selectedMemberId,
+    );
   }, [dailyStats, selectedMemberId]);
 
-  const weeklyDateKeys = useMemo(() => getLastSevenDateKeys(), []);
+  const chartItems = useMemo(() => {
+    return buildChartItems(viewMode, filteredStats);
+  }, [viewMode, filteredStats]);
 
-  const statsByDate = useMemo(() => {
-    const map = new Map<string, DailyMemberStat>();
+  const totalVsScore = useMemo(() => {
+    return chartItems.reduce((total, item) => total + item.vsScore, 0);
+  }, [chartItems]);
 
-    memberStats.forEach((stat) => {
-      map.set(stat.date, stat);
-    });
+  const totalDonations = useMemo(() => {
+    return chartItems.reduce((total, item) => total + item.donations, 0);
+  }, [chartItems]);
 
-    return map;
-  }, [memberStats]);
-
-  const totals = useMemo(() => {
-    return memberStats.reduce(
-      (acc, stat) => {
-        acc.vsScore += stat.vsScore;
-        acc.donations += stat.donations;
-        return acc;
-      },
-      {
-        vsScore: 0,
-        donations: 0,
-      },
-    );
-  }, [memberStats]);
-
-  const [form, setForm] = useState<StatFormState>(emptyForm);
-
-  function resetForm() {
-    setForm({
-      ...emptyForm,
-      date: getTodayDateKey(),
-    });
-  }
-
-  function startEditingStat(stat: DailyMemberStat) {
-    setForm({
-      editingStatId: stat.id,
-      date: stat.date,
-      vsScore: String(stat.vsScore),
-      donations: String(stat.donations),
-      notes: stat.notes ?? "",
-    });
-  }
-
-  function saveStat() {
-    if (!selectedMemberId) {
-      Alert.alert("No member selected", "Create or select a member first.");
-      return;
-    }
-
-    const trimmedDate = form.date.trim();
-
-    if (!trimmedDate) {
-      Alert.alert("Missing date", "Enter a date for this stat.");
-      return;
-    }
-
-    const vsScore = Number(form.vsScore || 0);
-    const donations = Number(form.donations || 0);
-
-    if (Number.isNaN(vsScore) || Number.isNaN(donations)) {
+  function openDailyStats(date?: string) {
+    if (selectedMemberId === ALL_MEMBERS_ID) {
       Alert.alert(
-        "Invalid values",
-        "Versus points and donations must be numbers.",
+        "Select a member",
+        "Choose a specific member before adding daily stats.",
       );
       return;
     }
 
-    if (vsScore < 0 || donations < 0) {
-      Alert.alert("Invalid values", "Values cannot be negative.");
-      return;
-    }
-
-    const existingStatForDate = memberStats.find(
-      (stat) => stat.date === trimmedDate,
-    );
-
-    if (form.editingStatId) {
-      updateDailyStat(form.editingStatId, {
+    router.push({
+      pathname: "/(tabs)/members/add-daily-stats",
+      params: {
         memberId: selectedMemberId,
-        date: trimmedDate,
-        vsScore,
-        donations,
-        notes: form.notes.trim(),
-      });
-    } else if (existingStatForDate) {
-      updateDailyStat(existingStatForDate.id, {
-        vsScore,
-        donations,
-        notes: form.notes.trim(),
-      });
-    } else {
-      addDailyStat({
-        memberId: selectedMemberId,
-        date: trimmedDate,
-        vsScore,
-        donations,
-        notes: form.notes.trim(),
-      });
-    }
-
-    resetForm();
-  }
-
-  function confirmDeleteStat(stat: DailyMemberStat) {
-    Alert.alert("Delete stat?", "This will remove this daily entry.", [
-      {
-        text: "Cancel",
-        style: "cancel",
+        ...(date ? { date } : {}),
       },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteDailyStat(stat.id),
-      },
-    ]);
+    });
   }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: `${getMemberDisplayName(selectedMember)} Stats`,
-        }}
-      />
-
+    <RequireActiveAlliance>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
       >
-        {!selectedMember ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No member selected</Text>
-            <Text style={styles.emptyText}>
-              Add a member first, then come back here to enter daily VS points
-              and donations.
-            </Text>
+        <View style={styles.headerCard}>
+          <Text style={styles.eyebrow}>Member Stats</Text>
+          <Text style={styles.title}>
+            {selectedMember?.name ?? "Alliance Stats"}
+          </Text>
+          <Text style={styles.description}>
+            View VS scores and donations by day, week, or month.
+          </Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Member</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.memberSelector}
+          >
+            <SelectorChip
+              label="All"
+              selected={selectedMemberId === ALL_MEMBERS_ID}
+              onPress={() => setSelectedMemberId(ALL_MEMBERS_ID)}
+            />
+
+            {members.map((member) => (
+              <SelectorChip
+                key={member.id}
+                label={member.name}
+                selected={selectedMemberId === member.id}
+                onPress={() => setSelectedMemberId(member.id)}
+              />
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.segmentedControl}>
+          {VIEW_MODES.map((item) => (
+            <SegmentButton
+              key={item.value}
+              label={item.label}
+              selected={viewMode === item.value}
+              onPress={() => setViewMode(item.value)}
+            />
+          ))}
+        </View>
+
+        <View style={styles.summaryGrid}>
+          <SummaryCard label="VS Score" value={formatNumber(totalVsScore)} />
+          <SummaryCard label="Donations" value={formatNumber(totalDonations)} />
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Graph</Text>
           </View>
-        ) : (
-          <>
-            <View style={styles.headerCard}>
-              <Text style={styles.title}>{selectedMember.username}</Text>
-              <Text style={styles.subtitle}>
-                Track daily versus points and alliance donations.
-              </Text>
 
-              <View style={styles.summaryRow}>
-                <View style={styles.summaryBox}>
-                  <Text style={styles.summaryLabel}>Total VS</Text>
-                  <Text style={styles.summaryValue}>
-                    {totals.vsScore.toLocaleString()}
+          <View style={styles.segmentedControl}>
+            {METRIC_MODES.map((item) => (
+              <SegmentButton
+                key={item.value}
+                label={item.label}
+                selected={metricMode === item.value}
+                onPress={() => setMetricMode(item.value)}
+              />
+            ))}
+          </View>
+
+          <StatsBarChart items={chartItems} metricMode={metricMode} />
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {getBreakdownTitle(viewMode)}
+            </Text>
+
+            {selectedMemberId !== ALL_MEMBERS_ID ? (
+              <Pressable onPress={() => openDailyStats()}>
+                <Text style={styles.inlineAction}>Add Stats</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.breakdownList}>
+            {[...chartItems].reverse().map((item) => (
+              <Pressable
+                key={item.key}
+                style={styles.breakdownRow}
+                onPress={() => {
+                  if (viewMode === "daily") {
+                    openDailyStats(item.startDate);
+                  }
+                }}
+              >
+                <View>
+                  <Text style={styles.breakdownLabel}>{item.label}</Text>
+                  <Text style={styles.breakdownSubLabel}>
+                    {item.rangeLabel}
                   </Text>
                 </View>
 
-                <View style={styles.summaryBox}>
-                  <Text style={styles.summaryLabel}>Total Donations</Text>
-                  <Text style={styles.summaryValue}>
-                    {totals.donations.toLocaleString()}
+                <View style={styles.breakdownValues}>
+                  <Text style={styles.breakdownValue}>
+                    VS: {formatNumber(item.vsScore)}
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    Don: {formatNumber(item.donations)}
                   </Text>
                 </View>
-              </View>
-            </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>This Week</Text>
-
-              <View style={styles.weekGrid}>
-                {weeklyDateKeys.map((dateKey) => {
-                  const stat = statsByDate.get(dateKey);
-
-                  return (
-                    <Pressable
-                      key={dateKey}
-                      onPress={() =>
-                        stat
-                          ? startEditingStat(stat)
-                          : setForm({
-                              ...emptyForm,
-                              date: dateKey,
-                            })
-                      }
-                      style={({ pressed }) => [
-                        styles.dayCard,
-                        stat && styles.dayCardFilled,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={styles.dayDate}>{dateKey.slice(5)}</Text>
-                      <Text style={styles.dayValue}>
-                        VS: {stat?.vsScore.toLocaleString() ?? "—"}
-                      </Text>
-                      <Text style={styles.dayValue}>
-                        Don: {stat?.donations.toLocaleString() ?? "—"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {form.editingStatId ? "Edit Daily Entry" : "Add Daily Entry"}
-              </Text>
-
-              <View style={styles.formCard}>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Date</Text>
-                  <TextInput
-                    value={form.date}
-                    onChangeText={(date) =>
-                      setForm((current) => ({
-                        ...current,
-                        date,
-                      }))
-                    }
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.muted}
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Versus Points</Text>
-                  <TextInput
-                    value={form.vsScore}
-                    onChangeText={(vsScore) =>
-                      setForm((current) => ({
-                        ...current,
-                        vsScore,
-                      }))
-                    }
-                    placeholder="0"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Donations</Text>
-                  <TextInput
-                    value={form.donations}
-                    onChangeText={(donations) =>
-                      setForm((current) => ({
-                        ...current,
-                        donations,
-                      }))
-                    }
-                    placeholder="0"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Notes</Text>
-                  <TextInput
-                    value={form.notes}
-                    onChangeText={(notes) =>
-                      setForm((current) => ({
-                        ...current,
-                        notes,
-                      }))
-                    }
-                    placeholder="Optional notes..."
-                    placeholderTextColor={colors.muted}
-                    multiline
-                    style={[styles.input, styles.notesInput]}
-                  />
-                </View>
-
-                <AppButton
-                  title={form.editingStatId ? "Update Entry" : "Save Entry"}
-                  onPress={saveStat}
-                />
-
-                {form.editingStatId ? (
-                  <Pressable onPress={resetForm}>
-                    <Text style={styles.cancelText}>Cancel Edit</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>History</Text>
-
-              {memberStats.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>
-                    No stats recorded yet. Add the first daily entry above.
-                  </Text>
-                </View>
-              ) : (
-                memberStats.map((stat) => (
-                  <View key={stat.id} style={styles.statCard}>
-                    <View>
-                      <Text style={styles.statDate}>{stat.date}</Text>
-                      <Text style={styles.statMeta}>
-                        VS {stat.vsScore.toLocaleString()} · Donations{" "}
-                        {stat.donations.toLocaleString()}
-                      </Text>
-
-                      {!!stat.notes?.trim() && (
-                        <Text style={styles.notesText}>
-                          {stat.notes.trim()}
-                        </Text>
-                      )}
-                    </View>
-
-                    <View style={styles.actionsRow}>
-                      <SmallButton
-                        title="Edit"
-                        onPress={() => startEditingStat(stat)}
-                      />
-                      <SmallButton
-                        title="Delete"
-                        variant="danger"
-                        onPress={() => confirmDeleteStat(stat)}
-                      />
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-          </>
-        )}
+        {selectedMemberId !== ALL_MEMBERS_ID ? (
+          <AppButton title="Add Daily Stats" onPress={() => openDailyStats()} />
+        ) : null}
       </ScrollView>
-    </>
+    </RequireActiveAlliance>
   );
 }
 
-function SmallButton({
-  title,
-  variant = "default",
-  onPress,
-}: {
-  title: string;
-  variant?: "default" | "danger";
+export default MemberStatsScreen;
+
+type SelectorChipProps = {
+  label: string;
+  selected: boolean;
   onPress: () => void;
-}) {
+};
+
+function SelectorChip({ label, selected, onPress }: SelectorChipProps) {
   return (
     <Pressable
+      style={[styles.selectorChip, selected && styles.selectorChipSelected]}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.smallButton,
-        variant === "danger" && styles.dangerButton,
-        pressed && styles.pressed,
-      ]}
     >
       <Text
         style={[
-          styles.smallButtonText,
-          variant === "danger" && styles.dangerButtonText,
+          styles.selectorChipText,
+          selected && styles.selectorChipTextSelected,
         ]}
       >
-        {title}
+        {label}
       </Text>
     </Pressable>
   );
+}
+
+type SegmentButtonProps = {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+};
+
+function SegmentButton({ label, selected, onPress }: SegmentButtonProps) {
+  return (
+    <Pressable
+      style={[styles.segmentButton, selected && styles.segmentButtonSelected]}
+      onPress={onPress}
+    >
+      <Text
+        style={[
+          styles.segmentButtonText,
+          selected && styles.segmentButtonTextSelected,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+type SummaryCardProps = {
+  label: string;
+  value: string;
+};
+
+function SummaryCard({ label, value }: SummaryCardProps) {
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
+
+type StatsBarChartProps = {
+  items: ChartItem[];
+  metricMode: MetricMode;
+};
+
+function StatsBarChart({ items, metricMode }: StatsBarChartProps) {
+  const maxValue = Math.max(...items.map((item) => item[metricMode]), 0);
+
+  if (items.length === 0) {
+    return (
+      <View style={styles.emptyCard}>
+        <Text style={styles.emptyText}>No stats to display yet.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.chartCard}>
+      {items.map((item) => {
+        const value = item[metricMode];
+        const widthPercent =
+          maxValue <= 0 ? 0 : Math.max((value / maxValue) * 100, 4);
+
+        return (
+          <View key={item.key} style={styles.chartRow}>
+            <Text style={styles.chartLabel}>{item.label}</Text>
+
+            <View style={styles.chartTrack}>
+              <View
+                style={[
+                  styles.chartFill,
+                  {
+                    width: `${widthPercent}%`,
+                    opacity: value > 0 ? 1 : 0,
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.chartValue}>{formatCompactNumber(value)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function buildChartItems(viewMode: ViewMode, stats: any[]): ChartItem[] {
+  switch (viewMode) {
+    case "weekly":
+      return buildWeeklyItems(stats);
+    case "monthly":
+      return buildMonthlyItems(stats);
+    case "daily":
+    default:
+      return buildDailyItems(stats);
+  }
+}
+
+function buildDailyItems(stats: any[]): ChartItem[] {
+  const today = new Date();
+
+  return Array.from({ length: 7 }).map((_, index) => {
+    const date = addDays(today, index - 6);
+    const dateKey = toDateKey(date);
+
+    const aggregate = aggregateStats(stats, dateKey, dateKey);
+
+    return {
+      key: dateKey,
+      label: formatShortDate(dateKey),
+      rangeLabel: dateKey,
+      startDate: dateKey,
+      endDate: dateKey,
+      ...aggregate,
+    };
+  });
+}
+
+function buildWeeklyItems(stats: any[]): ChartItem[] {
+  const currentWeekStart = getStartOfWeek(new Date());
+
+  return Array.from({ length: 8 }).map((_, index) => {
+    const start = addDays(currentWeekStart, (index - 7) * 7);
+    const end = addDays(start, 6);
+
+    const startDate = toDateKey(start);
+    const endDate = toDateKey(end);
+
+    const aggregate = aggregateStats(stats, startDate, endDate);
+
+    return {
+      key: startDate,
+      label: formatShortDate(startDate),
+      rangeLabel: `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`,
+      startDate,
+      endDate,
+      ...aggregate,
+    };
+  });
+}
+
+function buildMonthlyItems(stats: any[]): ChartItem[] {
+  const today = new Date();
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  return Array.from({ length: 6 }).map((_, index) => {
+    const start = addMonths(currentMonthStart, index - 5);
+    const end = addDays(addMonths(start, 1), -1);
+
+    const startDate = toDateKey(start);
+    const endDate = toDateKey(end);
+
+    const aggregate = aggregateStats(stats, startDate, endDate);
+
+    return {
+      key: startDate,
+      label: formatMonthLabel(start),
+      rangeLabel: `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`,
+      startDate,
+      endDate,
+      ...aggregate,
+    };
+  });
+}
+
+function aggregateStats(stats: any[], startDate: string, endDate: string) {
+  return stats.reduce(
+    (totals, stat) => {
+      const date = getStatDate(stat);
+
+      if (!date || date < startDate || date > endDate) {
+        return totals;
+      }
+
+      return {
+        vsScore: totals.vsScore + getStatVsScore(stat),
+        donations: totals.donations + getStatDonations(stat),
+      };
+    },
+    {
+      vsScore: 0,
+      donations: 0,
+    },
+  );
+}
+
+function getStatMemberId(stat: any) {
+  return stat.memberId ?? stat.member_id;
+}
+
+function getStatDate(stat: any) {
+  return stat.date;
+}
+
+function getStatVsScore(stat: any) {
+  return Number(
+    stat.vsScore ?? stat.vs_score ?? stat.vsScore ?? stat.versus_points ?? 0,
+  );
+}
+
+function getStatDonations(stat: any) {
+  return Number(stat.donations ?? 0);
+}
+
+function getBreakdownTitle(viewMode: ViewMode) {
+  switch (viewMode) {
+    case "weekly":
+      return "Weekly Breakdown";
+    case "monthly":
+      return "Monthly Breakdown";
+    case "daily":
+    default:
+      return "Daily Breakdown";
+  }
+}
+
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, amount: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + amount);
+  return copy;
+}
+
+function addMonths(date: Date, amount: number) {
+  const copy = new Date(date);
+  copy.setMonth(copy.getMonth() + amount);
+  return copy;
+}
+
+function getStartOfWeek(date: Date) {
+  const copy = new Date(date);
+  const day = copy.getDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+
+  copy.setDate(copy.getDate() - daysSinceMonday);
+  copy.setHours(0, 0, 0, 0);
+
+  return copy;
+}
+
+function formatShortDate(dateKey: string) {
+  const date = parseDateKey(dateKey);
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatMonthLabel(date: Date) {
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+  });
+}
+
+function formatNumber(value: number | null | undefined) {
+  return Math.round(value ?? 0).toLocaleString();
+}
+
+function formatCompactNumber(value: number | null | undefined) {
+  const safeValue = value ?? 0;
+
+  if (safeValue >= 1_000_000_000) {
+    return `${(safeValue / 1_000_000_000).toFixed(1)}B`;
+  }
+
+  if (safeValue >= 1_000_000) {
+    return `${(safeValue / 1_000_000).toFixed(1)}M`;
+  }
+
+  if (safeValue >= 1_000) {
+    return `${(safeValue / 1_000).toFixed(1)}K`;
+  }
+
+  return Math.round(safeValue).toLocaleString();
 }
 
 const styles = StyleSheet.create({
@@ -469,7 +558,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    gap: 18,
+    gap: 14,
   },
   headerCard: {
     backgroundColor: colors.surface,
@@ -477,173 +566,195 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    gap: 12,
+  },
+  eyebrow: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
   },
   title: {
     color: colors.text,
     fontSize: 24,
     fontWeight: "900",
   },
-  subtitle: {
+  description: {
     color: colors.muted,
+    marginTop: 6,
     lineHeight: 20,
   },
-  summaryRow: {
+  section: {
+    gap: 10,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  inlineAction: {
+    color: colors.text,
+    fontWeight: "900",
+  },
+  memberSelector: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  selectorChip: {
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  selectorChipSelected: {
+    borderColor: colors.text,
+  },
+  selectorChipText: {
+    color: colors.muted,
+    fontWeight: "800",
+  },
+  selectorChipTextSelected: {
+    color: colors.text,
+  },
+  segmentedControl: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 4,
+    flexDirection: "row",
+    gap: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  segmentButtonSelected: {
+    backgroundColor: colors.background,
+  },
+  segmentButtonText: {
+    color: colors.muted,
+    fontWeight: "800",
+  },
+  segmentButtonTextSelected: {
+    color: colors.text,
+  },
+  summaryGrid: {
     flexDirection: "row",
     gap: 10,
   },
-  summaryBox: {
+  summaryCard: {
     flex: 1,
-    backgroundColor: colors.background,
-    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 12,
-    gap: 4,
+    padding: 14,
   },
   summaryLabel: {
     color: colors.muted,
     fontSize: 12,
     fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   summaryValue: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "900",
+    marginTop: 6,
   },
-  section: {
-    gap: 10,
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  weekGrid: {
-    gap: 8,
-  },
-  dayCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    gap: 4,
-  },
-  dayCardFilled: {
-    borderColor: colors.primary,
-  },
-  dayDate: {
-    color: colors.text,
-    fontWeight: "900",
-  },
-  dayValue: {
-    color: colors.muted,
-    fontWeight: "700",
-  },
-  formCard: {
+  chartCard: {
     backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
+    padding: 14,
     gap: 12,
   },
-  field: {
-    gap: 6,
-  },
-  label: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  input: {
-    minHeight: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    color: colors.text,
-    paddingHorizontal: 12,
-    fontWeight: "700",
-  },
-  notesInput: {
-    minHeight: 90,
-    paddingTop: 12,
-    textAlignVertical: "top",
-  },
-  statCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 12,
-  },
-  statDate: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  statMeta: {
-    color: colors.muted,
-    marginTop: 2,
-    fontWeight: "700",
-  },
-  notesText: {
-    color: colors.muted,
-    lineHeight: 20,
-    marginTop: 8,
-  },
-  actionsRow: {
+  chartRow: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 10,
   },
-  smallButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  smallButtonText: {
-    color: colors.text,
-    fontWeight: "900",
-  },
-  dangerButton: {
-    backgroundColor: "#fee2e2",
-    borderColor: "#fecaca",
-  },
-  dangerButtonText: {
-    color: "#b91c1c",
-  },
-  cancelText: {
+  chartLabel: {
     color: colors.muted,
+    width: 58,
+    fontSize: 12,
     fontWeight: "800",
-    textAlign: "center",
-    marginTop: 4,
+  },
+  chartTrack: {
+    flex: 1,
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+    overflow: "hidden",
+  },
+  chartFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.text,
+  },
+  chartValue: {
+    color: colors.text,
+    width: 52,
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: "800",
   },
   emptyCard: {
     backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-    marginBottom: 6,
+    padding: 18,
   },
   emptyText: {
     color: colors.muted,
-    lineHeight: 20,
+    textAlign: "center",
   },
-  pressed: {
-    opacity: 0.65,
+  breakdownList: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  breakdownRow: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  breakdownLabel: {
+    color: colors.text,
+    fontWeight: "900",
+  },
+  breakdownSubLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  breakdownValues: {
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  breakdownValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
   },
 });
