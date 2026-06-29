@@ -979,6 +979,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       .insert({
         alliance_id: allianceId,
         date: assignment.date,
+        title: assignment.trainName,
         train_name: assignment.trainName,
         conductor_member_id: assignment.conductorMemberId ?? null,
         passenger_member_id: assignment.passengerMemberId ?? null,
@@ -1078,17 +1079,15 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       .from("alliance_events")
       .insert({
         alliance_id: allianceId,
-        name: event.name,
+        title: event.name,
         type: event.type,
-        date: event.date,
+        starts_at: event.date,
         notes: event.notes ?? null,
         assigned_member_ids: event.assignedMemberIds ?? [],
         status: event.status ?? BoardItemStatus.Active,
         completed_at: event.completedAt ?? null,
       })
-      .select(
-        "id,alliance_id,name,type,date,notes,assigned_member_ids,status,completed_at,created_at,updated_at",
-      )
+      .select()
       .single();
 
     if (error) {

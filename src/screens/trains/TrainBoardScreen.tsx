@@ -10,8 +10,25 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { useAllianceStore } from "@/store/allianceStore";
+import {
+  BoardItemStatus,
+  TrainAssignment,
+  useAllianceStore,
+} from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
+
+const theme = colors as typeof colors & {
+  primary?: string;
+  textMuted?: string;
+  muted?: string;
+  surface?: string;
+  border?: string;
+};
+
+const primaryColor = theme.primary ?? "#6d28d9";
+const mutedColor = theme.textMuted ?? theme.muted ?? "#64748b";
+const surfaceColor = theme.surface ?? "#ffffff";
+const borderColor = theme.border ?? "#e5e7eb";
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -24,6 +41,16 @@ function getMemberName(
   if (!memberId) return "Unassigned";
 
   return members.find((member) => member.id === memberId)?.name ?? "Unknown";
+}
+
+function sortAssignmentsByDate(assignments: TrainAssignment[]) {
+  return assignments.slice().sort((a, b) => {
+    const dateCompare = b.date.localeCompare(a.date);
+
+    if (dateCompare !== 0) return dateCompare;
+
+    return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+  });
 }
 
 export function TrainBoardScreen() {
@@ -58,6 +85,11 @@ export function TrainBoardScreen() {
     null,
   );
 
+  const [saving, setSaving] = useState(false);
+  const [workingAssignmentId, setWorkingAssignmentId] = useState<string | null>(
+    null,
+  );
+
   const activeMembers = useMemo(() => {
     return members
       .filter((member) => member.isActive !== false)
@@ -66,29 +98,26 @@ export function TrainBoardScreen() {
   }, [members]);
 
   const activeAssignments = useMemo(() => {
-    return trainAssignments
-      .filter((assignment) => assignment.status !== "completed")
-      .slice()
-      .sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
-
-        if (dateCompare !== 0) return dateCompare;
-
-        return b.createdAt.localeCompare(a.createdAt);
-      });
+    return sortAssignmentsByDate(
+      trainAssignments.filter((assignment) => {
+        return assignment.status !== BoardItemStatus.Completed;
+      }),
+    );
   }, [trainAssignments]);
 
   const completedAssignments = useMemo(() => {
     return trainAssignments
-      .filter((assignment) => assignment.status === "completed")
+      .filter((assignment) => {
+        return assignment.status === BoardItemStatus.Completed;
+      })
       .slice()
       .sort((a, b) => {
         const dateCompare = b.date.localeCompare(a.date);
 
         if (dateCompare !== 0) return dateCompare;
 
-        return (b.completedAt ?? b.createdAt).localeCompare(
-          a.completedAt ?? a.createdAt,
+        return (b.completedAt ?? b.createdAt ?? "").localeCompare(
+          a.completedAt ?? a.createdAt ?? "",
         );
       });
   }, [trainAssignments]);
@@ -101,7 +130,7 @@ export function TrainBoardScreen() {
     setPassengerMemberId(null);
   }
 
-  function handleAddAssignment() {
+  async function handleAddAssignment() {
     const trimmedTrainName = trainName.trim();
 
     if (!trimmedTrainName) {
@@ -109,18 +138,81 @@ export function TrainBoardScreen() {
       return;
     }
 
-    addTrainAssignment({
-      date: date.trim() || todayString(),
-      trainName: trimmedTrainName,
-      conductorMemberId,
-      passengerMemberId,
-      notes: notes.trim(),
-      status: "active",
-      completedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      setSaving(true);
 
-    resetForm();
+      await addTrainAssignment({
+        date: date.trim() || todayString(),
+        trainName: trimmedTrainName,
+        conductorMemberId,
+        passengerMemberId,
+        notes: notes.trim() || null,
+        status: BoardItemStatus.Active,
+        completedAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+
+      resetForm();
+    } catch (error) {
+      Alert.alert(
+        "Could not add train assignment",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSwapAssignmentMembers(assignmentId: string) {
+    const assignment = trainAssignments.find(
+      (item) => item.id === assignmentId,
+    );
+
+    if (!assignment) return;
+
+    try {
+      setWorkingAssignmentId(assignmentId);
+
+      await updateTrainAssignment(assignmentId, {
+        conductorMemberId: assignment.passengerMemberId ?? null,
+        passengerMemberId: assignment.conductorMemberId ?? null,
+      });
+    } catch (error) {
+      Alert.alert(
+        "Could not swap assignment",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setWorkingAssignmentId(null);
+    }
+  }
+
+  async function handleCompleteAssignment(assignmentId: string) {
+    try {
+      setWorkingAssignmentId(assignmentId);
+      await completeTrainAssignment(assignmentId);
+    } catch (error) {
+      Alert.alert(
+        "Could not complete assignment",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setWorkingAssignmentId(null);
+    }
+  }
+
+  async function handleReopenAssignment(assignmentId: string) {
+    try {
+      setWorkingAssignmentId(assignmentId);
+      await reopenTrainAssignment(assignmentId);
+    } catch (error) {
+      Alert.alert(
+        "Could not reopen assignment",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setWorkingAssignmentId(null);
+    }
   }
 
   function confirmDeleteAssignment(assignmentId: string) {
@@ -135,23 +227,124 @@ export function TrainBoardScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteTrainAssignment(assignmentId),
+          onPress: async () => {
+            try {
+              setWorkingAssignmentId(assignmentId);
+              await deleteTrainAssignment(assignmentId);
+            } catch (error) {
+              Alert.alert(
+                "Could not delete assignment",
+                error instanceof Error
+                  ? error.message
+                  : "Something went wrong.",
+              );
+            } finally {
+              setWorkingAssignmentId(null);
+            }
+          },
         },
       ],
     );
   }
 
-  function swapAssignmentMembers(assignmentId: string) {
-    const assignment = trainAssignments.find(
-      (item) => item.id === assignmentId,
+  function renderAssignmentCard(
+    assignment: TrainAssignment,
+    variant: "active" | "completed",
+  ) {
+    const isCompleted = variant === "completed";
+    const isWorking = workingAssignmentId === assignment.id;
+
+    return (
+      <View key={assignment.id} style={styles.assignmentCard}>
+        <View style={styles.assignmentHeader}>
+          <View style={styles.assignmentHeaderText}>
+            <Text style={styles.assignmentTitle}>{assignment.trainName}</Text>
+            <Text style={styles.assignmentDate}>{assignment.date}</Text>
+          </View>
+
+          <View
+            style={isCompleted ? styles.completedBadge : styles.statusBadge}
+          >
+            <Text
+              style={
+                isCompleted ? styles.completedBadgeText : styles.statusBadgeText
+              }
+            >
+              {isCompleted ? "Completed" : "Active"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.assignmentRow}>
+          <Text style={styles.assignmentLabel}>Conductor</Text>
+          <Text style={styles.assignmentValue}>
+            {getMemberName(members, assignment.conductorMemberId)}
+          </Text>
+        </View>
+
+        <View style={styles.assignmentRow}>
+          <Text style={styles.assignmentLabel}>Passenger</Text>
+          <Text style={styles.assignmentValue}>
+            {getMemberName(members, assignment.passengerMemberId)}
+          </Text>
+        </View>
+
+        {assignment.notes ? (
+          <Text style={styles.assignmentNotes}>{assignment.notes}</Text>
+        ) : null}
+
+        <View style={styles.actionRow}>
+          {!isCompleted ? (
+            <>
+              <Pressable
+                style={[
+                  styles.secondaryButton,
+                  isWorking && styles.disabledButton,
+                ]}
+                onPress={() => handleSwapAssignmentMembers(assignment.id)}
+                disabled={isWorking}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  {isWorking ? "Working..." : "Swap"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.completeButton,
+                  isWorking && styles.disabledButton,
+                ]}
+                onPress={() => handleCompleteAssignment(assignment.id)}
+                disabled={isWorking}
+              >
+                <Text style={styles.completeButtonText}>Complete</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                isWorking && styles.disabledButton,
+              ]}
+              onPress={() => handleReopenAssignment(assignment.id)}
+              disabled={isWorking}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {isWorking ? "Working..." : "Reopen"}
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable
+            style={[styles.deleteButton, isWorking && styles.disabledButton]}
+            onPress={() => confirmDeleteAssignment(assignment.id)}
+            disabled={isWorking}
+          >
+            <Text style={styles.deleteButtonText}>Delete</Text>
+          </Pressable>
+        </View>
+      </View>
     );
-
-    if (!assignment) return;
-
-    updateTrainAssignment(assignmentId, {
-      conductorMemberId: assignment.passengerMemberId ?? null,
-      passengerMemberId: assignment.conductorMemberId ?? null,
-    });
   }
 
   return (
@@ -175,9 +368,10 @@ export function TrainBoardScreen() {
               value={date}
               onChangeText={setDate}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={mutedColor}
               autoCapitalize="none"
               autoCorrect={false}
+              editable={!saving}
               style={styles.input}
             />
           </View>
@@ -188,9 +382,10 @@ export function TrainBoardScreen() {
               value={trainName}
               onChangeText={setTrainName}
               placeholder="Mega Express, Gold Train, Regular Train..."
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={mutedColor}
               autoCapitalize="words"
               autoCorrect={false}
+              editable={!saving}
               style={styles.input}
             />
           </View>
@@ -210,6 +405,7 @@ export function TrainBoardScreen() {
                     conductorMemberId === null && styles.memberChipActive,
                   ]}
                   onPress={() => setConductorMemberId(null)}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -232,6 +428,7 @@ export function TrainBoardScreen() {
                         selected && styles.memberChipActive,
                       ]}
                       onPress={() => setConductorMemberId(member.id)}
+                      disabled={saving}
                     >
                       <Text
                         style={[
@@ -267,6 +464,7 @@ export function TrainBoardScreen() {
                     passengerMemberId === null && styles.memberChipActive,
                   ]}
                   onPress={() => setPassengerMemberId(null)}
+                  disabled={saving}
                 >
                   <Text
                     style={[
@@ -289,6 +487,7 @@ export function TrainBoardScreen() {
                         selected && styles.memberChipActive,
                       ]}
                       onPress={() => setPassengerMemberId(member.id)}
+                      disabled={saving}
                     >
                       <Text
                         style={[
@@ -315,15 +514,22 @@ export function TrainBoardScreen() {
               value={notes}
               onChangeText={setNotes}
               placeholder="Optional notes"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={mutedColor}
               autoCapitalize="sentences"
               multiline
+              editable={!saving}
               style={[styles.input, styles.notesInput]}
             />
           </View>
 
-          <Pressable style={styles.primaryButton} onPress={handleAddAssignment}>
-            <Text style={styles.primaryButtonText}>Add Assignment</Text>
+          <Pressable
+            style={[styles.primaryButton, saving && styles.disabledButton]}
+            onPress={handleAddAssignment}
+            disabled={saving}
+          >
+            <Text style={styles.primaryButtonText}>
+              {saving ? "Saving..." : "Add Assignment"}
+            </Text>
           </Pressable>
         </View>
 
@@ -331,63 +537,9 @@ export function TrainBoardScreen() {
           <Text style={styles.sectionTitle}>Active Assignments</Text>
 
           {activeAssignments.length > 0 ? (
-            activeAssignments.map((assignment) => (
-              <View key={assignment.id} style={styles.assignmentCard}>
-                <View style={styles.assignmentHeader}>
-                  <View style={styles.assignmentHeaderText}>
-                    <Text style={styles.assignmentTitle}>
-                      {assignment.trainName}
-                    </Text>
-                    <Text style={styles.assignmentDate}>{assignment.date}</Text>
-                  </View>
-
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>Active</Text>
-                  </View>
-                </View>
-
-                <View style={styles.assignmentRow}>
-                  <Text style={styles.assignmentLabel}>Conductor</Text>
-                  <Text style={styles.assignmentValue}>
-                    {getMemberName(members, assignment.conductorMemberId)}
-                  </Text>
-                </View>
-
-                <View style={styles.assignmentRow}>
-                  <Text style={styles.assignmentLabel}>Passenger</Text>
-                  <Text style={styles.assignmentValue}>
-                    {getMemberName(members, assignment.passengerMemberId)}
-                  </Text>
-                </View>
-
-                {assignment.notes ? (
-                  <Text style={styles.assignmentNotes}>{assignment.notes}</Text>
-                ) : null}
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => swapAssignmentMembers(assignment.id)}
-                  >
-                    <Text style={styles.secondaryButtonText}>Swap</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.completeButton}
-                    onPress={() => completeTrainAssignment(assignment.id)}
-                  >
-                    <Text style={styles.completeButtonText}>Complete</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.deleteButton}
-                    onPress={() => confirmDeleteAssignment(assignment.id)}
-                  >
-                    <Text style={styles.deleteButtonText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
+            activeAssignments.map((assignment) =>
+              renderAssignmentCard(assignment, "active"),
+            )
           ) : (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No active train assignments</Text>
@@ -403,56 +555,9 @@ export function TrainBoardScreen() {
           <Text style={styles.sectionTitle}>History</Text>
 
           {completedAssignments.length > 0 ? (
-            completedAssignments.map((assignment) => (
-              <View key={assignment.id} style={styles.assignmentCard}>
-                <View style={styles.assignmentHeader}>
-                  <View style={styles.assignmentHeaderText}>
-                    <Text style={styles.assignmentTitle}>
-                      {assignment.trainName}
-                    </Text>
-                    <Text style={styles.assignmentDate}>{assignment.date}</Text>
-                  </View>
-
-                  <View style={styles.completedBadge}>
-                    <Text style={styles.completedBadgeText}>Completed</Text>
-                  </View>
-                </View>
-
-                <View style={styles.assignmentRow}>
-                  <Text style={styles.assignmentLabel}>Conductor</Text>
-                  <Text style={styles.assignmentValue}>
-                    {getMemberName(members, assignment.conductorMemberId)}
-                  </Text>
-                </View>
-
-                <View style={styles.assignmentRow}>
-                  <Text style={styles.assignmentLabel}>Passenger</Text>
-                  <Text style={styles.assignmentValue}>
-                    {getMemberName(members, assignment.passengerMemberId)}
-                  </Text>
-                </View>
-
-                {assignment.notes ? (
-                  <Text style={styles.assignmentNotes}>{assignment.notes}</Text>
-                ) : null}
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => reopenTrainAssignment(assignment.id)}
-                  >
-                    <Text style={styles.secondaryButtonText}>Reopen</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.deleteButton}
-                    onPress={() => confirmDeleteAssignment(assignment.id)}
-                  >
-                    <Text style={styles.deleteButtonText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
+            completedAssignments.map((assignment) =>
+              renderAssignmentCard(assignment, "completed"),
+            )
           ) : (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No train history yet</Text>
@@ -478,7 +583,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   eyebrow: {
-    color: colors.primary,
+    color: primaryColor,
     fontSize: 13,
     fontWeight: "800",
     marginBottom: 6,
@@ -491,23 +596,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    color: colors.textMuted,
+    color: mutedColor,
     fontSize: 15,
     lineHeight: 22,
   },
   card: {
     borderRadius: 22,
-    backgroundColor: "#ffffff",
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
     padding: 18,
     marginBottom: 24,
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    elevation: 2,
   },
   cardTitle: {
     color: colors.text,
@@ -528,7 +627,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#d8d8d8",
+    borderColor,
     backgroundColor: "#ffffff",
     color: "#111111",
     paddingHorizontal: 14,
@@ -547,14 +646,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#d8d8d8",
+    borderColor,
     backgroundColor: "#ffffff",
     paddingHorizontal: 14,
     marginRight: 8,
   },
   memberChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
+    borderColor: primaryColor,
+    backgroundColor: primaryColor,
   },
   memberChipText: {
     color: colors.text,
@@ -569,13 +668,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
+    backgroundColor: primaryColor,
     marginTop: 4,
   },
   primaryButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "900",
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   section: {
     marginBottom: 26,
@@ -588,7 +690,9 @@ const styles = StyleSheet.create({
   },
   assignmentCard: {
     borderRadius: 20,
-    backgroundColor: "#ffffff",
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
     padding: 16,
     marginBottom: 12,
   },
@@ -609,7 +713,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   assignmentDate: {
-    color: colors.textMuted,
+    color: mutedColor,
     fontSize: 13,
     fontWeight: "700",
   },
@@ -620,7 +724,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   statusBadgeText: {
-    color: colors.primary,
+    color: primaryColor,
     fontSize: 12,
     fontWeight: "900",
   },
@@ -639,7 +743,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   assignmentLabel: {
-    color: colors.textMuted,
+    color: mutedColor,
     fontSize: 12,
     fontWeight: "800",
     marginBottom: 2,
@@ -651,7 +755,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   assignmentNotes: {
-    color: colors.textMuted,
+    color: mutedColor,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 2,
@@ -667,7 +771,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#d8d8d8",
+    borderColor,
     paddingHorizontal: 14,
     marginRight: 8,
     marginTop: 8,
@@ -681,7 +785,7 @@ const styles = StyleSheet.create({
     minHeight: 38,
     justifyContent: "center",
     borderRadius: 12,
-    backgroundColor: colors.primary,
+    backgroundColor: primaryColor,
     paddingHorizontal: 14,
     marginRight: 8,
     marginTop: 8,
@@ -706,7 +810,9 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     borderRadius: 18,
-    backgroundColor: "#ffffff",
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
     padding: 18,
   },
   emptyTitle: {
@@ -716,83 +822,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   emptyText: {
-    color: colors.textMuted,
+    color: mutedColor,
     fontSize: 14,
     lineHeight: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    maxHeight: "82%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 16,
-    gap: 12,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  modalTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  modalClose: {
-    color: colors.primary,
-    fontWeight: "900",
-    fontSize: 16,
-  },
-  memberList: {
-    gap: 10,
-    paddingBottom: 24,
-  },
-  memberRow: {
-    backgroundColor: colors.background,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  memberRowSelected: {
-    borderColor: colors.primary,
-  },
-  memberName: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  memberMeta: {
-    color: colors.muted,
-    marginTop: 2,
-  },
-  checkmark: {
-    color: colors.primary,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  pressed: {
-    opacity: 0.65,
-  },
-  createButton: {
-    backgroundColor: "#7c3aed",
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  createButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
   },
 });

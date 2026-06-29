@@ -151,7 +151,7 @@ export function AddMemberScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Level</Text>
+            <Text style={styles.label}>HQ Level</Text>
             <TextInput
               value={level}
               onChangeText={setLevel}
