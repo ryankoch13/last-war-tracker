@@ -11,7 +11,7 @@ import {
 type SaveStatsInput = {
   date: string;
   donations: number;
-  versusPoints: number;
+  vsScore: number;
 };
 
 export function useMyDailyStats(allianceId: string) {
@@ -43,7 +43,7 @@ export function useMyDailyStats(allianceId: string) {
   }, [loadStats]);
 
   const saveStats = useCallback(
-    async ({ date, donations, versusPoints }: SaveStatsInput) => {
+    async ({ date, donations, vsScore }: SaveStatsInput) => {
       try {
         setSaving(true);
         setError(null);
@@ -52,7 +52,7 @@ export function useMyDailyStats(allianceId: string) {
           allianceId,
           date,
           donations,
-          versusPoints,
+          vsScore,
         });
 
         setStats((currentStats) => {
