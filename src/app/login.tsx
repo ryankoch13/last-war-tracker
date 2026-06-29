@@ -49,6 +49,8 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      setLoading(true);
+
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
           email: trimmedEmail,
@@ -70,6 +72,7 @@ export default function LoginScreen() {
       }
 
       await loadActiveAlliance();
+
       router.replace("/");
     } catch (error) {
       const message =
@@ -78,7 +81,7 @@ export default function LoginScreen() {
           : "Something went wrong. Please try again.";
 
       Alert.alert(isLogin ? "Login failed" : "Sign up failed", message);
-    } finally {
+
       setLoading(false);
     }
   }
@@ -163,8 +166,11 @@ export default function LoginScreen() {
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
+              spellCheck={false}
               secureTextEntry
               textContentType={isLogin ? "password" : "newPassword"}
+              autoComplete={isLogin ? "password" : "new-password"}
+              keyboardType="default"
               style={styles.input}
             />
           </View>
