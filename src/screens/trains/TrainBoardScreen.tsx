@@ -1,58 +1,36 @@
-import { Stack } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
-import { AppButton } from "../../components/AppButton";
-import { useAllianceStore } from "../../store/allianceStore";
-import { colors } from "../../theme/colors";
-import type { AllianceMember, TrainAssignment } from "../../types/alliance";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useAllianceStore } from "@/store/allianceStore";
+import { colors } from "@/theme/colors";
 
-type PickerMode = "conductor" | "guards" | "passengers";
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-type PickerState = {
-  trainId: string;
-  mode: PickerMode;
-} | null;
-
-function getMemberName(members: AllianceMember[], memberId?: string) {
+function getMemberName(
+  members: Array<{ id: string; name: string }>,
+  memberId?: string | null,
+) {
   if (!memberId) return "Unassigned";
-  return (
-    members.find((member) => member.id === memberId)?.username ?? "Unknown"
-  );
-}
 
-function getMemberNames(members: AllianceMember[], memberIds: string[]) {
-  if (memberIds.length === 0) return "None assigned";
-
-  return memberIds
-    .map((memberId) => getMemberName(members, memberId))
-    .join(", ");
-}
-
-function getPickerTitle(mode: PickerMode) {
-  switch (mode) {
-    case "conductor":
-      return "Set Conductor";
-    case "guards":
-      return "Edit Guards";
-    case "passengers":
-      return "Edit Passengers";
-  }
+  return members.find((member) => member.id === memberId)?.name ?? "Unknown";
 }
 
 export function TrainBoardScreen() {
-  const [pickerState, setPickerState] = useState<PickerState>(null);
-
-  const members = useAllianceStore((state) => state.members);
-  const trains = useAllianceStore((state) => state.trains);
+  const members = useAllianceStore((state) => state.members ?? []);
+  const trainAssignments = useAllianceStore(
+    (state) => state.trainAssignments ?? [],
+  );
 
   const addTrainAssignment = useAllianceStore(
     (state) => state.addTrainAssignment,
@@ -70,50 +48,85 @@ export function TrainBoardScreen() {
     (state) => state.deleteTrainAssignment,
   );
 
-  const activeTrains = useMemo(() => {
-    return trains
-      .filter((train) => train.status !== "completed")
-      .slice()
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [trains]);
+  const [date, setDate] = useState(todayString());
+  const [trainName, setTrainName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [conductorMemberId, setConductorMemberId] = useState<string | null>(
+    null,
+  );
+  const [passengerMemberId, setPassengerMemberId] = useState<string | null>(
+    null,
+  );
 
-  const completedTrains = useMemo(() => {
-    return trains
-      .filter((train) => train.status === "completed")
+  const activeMembers = useMemo(() => {
+    return members
+      .filter((member) => member.isActive !== false)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [members]);
+
+  const activeAssignments = useMemo(() => {
+    return trainAssignments
+      .filter((assignment) => assignment.status !== "completed")
       .slice()
       .sort((a, b) => {
-        const aDate = a.completedAt ?? a.date;
-        const bDate = b.completedAt ?? b.date;
-        return bDate.localeCompare(aDate);
+        const dateCompare = b.date.localeCompare(a.date);
+
+        if (dateCompare !== 0) return dateCompare;
+
+        return b.createdAt.localeCompare(a.createdAt);
       });
-  }, [trains]);
+  }, [trainAssignments]);
 
-  const selectedTrain = useMemo(() => {
-    if (!pickerState) return undefined;
-    return trains.find((train) => train.id === pickerState.trainId);
-  }, [pickerState, trains]);
+  const completedAssignments = useMemo(() => {
+    return trainAssignments
+      .filter((assignment) => assignment.status === "completed")
+      .slice()
+      .sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
 
-  function confirmCompleteTrain(train: TrainAssignment) {
-    Alert.alert(
-      "Complete train?",
-      "This will move this assignment to train history.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Complete",
-          onPress: () => completeTrainAssignment(train.id),
-        },
-      ],
-    );
+        if (dateCompare !== 0) return dateCompare;
+
+        return (b.completedAt ?? b.createdAt).localeCompare(
+          a.completedAt ?? a.createdAt,
+        );
+      });
+  }, [trainAssignments]);
+
+  function resetForm() {
+    setDate(todayString());
+    setTrainName("");
+    setNotes("");
+    setConductorMemberId(null);
+    setPassengerMemberId(null);
   }
 
-  function confirmDeleteTrain(train: TrainAssignment) {
+  function handleAddAssignment() {
+    const trimmedTrainName = trainName.trim();
+
+    if (!trimmedTrainName) {
+      Alert.alert("Train name required", "Enter a train name or train type.");
+      return;
+    }
+
+    addTrainAssignment({
+      date: date.trim() || todayString(),
+      trainName: trimmedTrainName,
+      conductorMemberId,
+      passengerMemberId,
+      notes: notes.trim(),
+      status: "active",
+      completedAt: null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    resetForm();
+  }
+
+  function confirmDeleteAssignment(assignmentId: string) {
     Alert.alert(
-      "Delete train?",
-      "This will permanently delete this train assignment.",
+      "Delete assignment?",
+      "This will remove the train assignment from the board.",
       [
         {
           text: "Cancel",
@@ -122,554 +135,589 @@ export function TrainBoardScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteTrainAssignment(train.id),
+          onPress: () => deleteTrainAssignment(assignmentId),
         },
       ],
     );
   }
 
-  function toggleMember(memberId: string) {
-    if (!pickerState || !selectedTrain) return;
+  function swapAssignmentMembers(assignmentId: string) {
+    const assignment = trainAssignments.find(
+      (item) => item.id === assignmentId,
+    );
 
-    if (pickerState.mode === "conductor") {
-      updateTrainAssignment(selectedTrain.id, {
-        conductorId:
-          selectedTrain.conductorId === memberId ? undefined : memberId,
-      });
-      setPickerState(null);
-      return;
-    }
+    if (!assignment) return;
 
-    if (pickerState.mode === "guards") {
-      const isSelected = selectedTrain.guardIds.includes(memberId);
-
-      updateTrainAssignment(selectedTrain.id, {
-        guardIds: isSelected
-          ? selectedTrain.guardIds.filter((id) => id !== memberId)
-          : [...selectedTrain.guardIds, memberId],
-      });
-
-      return;
-    }
-
-    const isSelected = selectedTrain.passengerIds.includes(memberId);
-
-    updateTrainAssignment(selectedTrain.id, {
-      passengerIds: isSelected
-        ? selectedTrain.passengerIds.filter((id) => id !== memberId)
-        : [...selectedTrain.passengerIds, memberId],
+    updateTrainAssignment(assignmentId, {
+      conductorMemberId: assignment.passengerMemberId ?? null,
+      passengerMemberId: assignment.conductorMemberId ?? null,
     });
   }
 
-  function isMemberSelected(memberId: string) {
-    if (!pickerState || !selectedTrain) return false;
-
-    if (pickerState.mode === "conductor") {
-      return selectedTrain.conductorId === memberId;
-    }
-
-    if (pickerState.mode === "guards") {
-      return selectedTrain.guardIds.includes(memberId);
-    }
-
-    return selectedTrain.passengerIds.includes(memberId);
-  }
-
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Trains",
-        }}
-      />
+    <RequireActiveAlliance>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>Alliance Trains</Text>
+          <Text style={styles.title}>Train Board</Text>
+          <Text style={styles.subtitle}>
+            Assign conductors and passengers, then keep a history of completed
+            train assignments.
+          </Text>
+        </View>
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-      >
-        <View style={styles.headerCard}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Alliance Train Board</Text>
-            <Text style={styles.subtitle}>
-              Assign conductors, guards, and passengers. Completed trains are
-              saved to history.
-            </Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>New Assignment</Text>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Date</Text>
+            <TextInput
+              value={date}
+              onChangeText={setDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
           </View>
 
-          <AppButton title="Add Train" onPress={addTrainAssignment} />
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Train Name</Text>
+            <TextInput
+              value={trainName}
+              onChangeText={setTrainName}
+              placeholder="Mega Express, Gold Train, Regular Train..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={styles.input}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Conductor</Text>
+
+            {activeMembers.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.memberPicker}
+              >
+                <Pressable
+                  style={[
+                    styles.memberChip,
+                    conductorMemberId === null && styles.memberChipActive,
+                  ]}
+                  onPress={() => setConductorMemberId(null)}
+                >
+                  <Text
+                    style={[
+                      styles.memberChipText,
+                      conductorMemberId === null && styles.memberChipTextActive,
+                    ]}
+                  >
+                    Unassigned
+                  </Text>
+                </Pressable>
+
+                {activeMembers.map((member) => {
+                  const selected = conductorMemberId === member.id;
+
+                  return (
+                    <Pressable
+                      key={member.id}
+                      style={[
+                        styles.memberChip,
+                        selected && styles.memberChipActive,
+                      ]}
+                      onPress={() => setConductorMemberId(member.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.memberChipText,
+                          selected && styles.memberChipTextActive,
+                        ]}
+                      >
+                        {member.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <Text style={styles.emptyText}>
+                Add members before assigning conductors.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Passenger</Text>
+
+            {activeMembers.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.memberPicker}
+              >
+                <Pressable
+                  style={[
+                    styles.memberChip,
+                    passengerMemberId === null && styles.memberChipActive,
+                  ]}
+                  onPress={() => setPassengerMemberId(null)}
+                >
+                  <Text
+                    style={[
+                      styles.memberChipText,
+                      passengerMemberId === null && styles.memberChipTextActive,
+                    ]}
+                  >
+                    Unassigned
+                  </Text>
+                </Pressable>
+
+                {activeMembers.map((member) => {
+                  const selected = passengerMemberId === member.id;
+
+                  return (
+                    <Pressable
+                      key={member.id}
+                      style={[
+                        styles.memberChip,
+                        selected && styles.memberChipActive,
+                      ]}
+                      onPress={() => setPassengerMemberId(member.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.memberChipText,
+                          selected && styles.memberChipTextActive,
+                        ]}
+                      >
+                        {member.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <Text style={styles.emptyText}>
+                Add members before assigning passengers.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Optional notes"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              multiline
+              style={[styles.input, styles.notesInput]}
+            />
+          </View>
+
+          <Pressable style={styles.primaryButton} onPress={handleAddAssignment}>
+            <Text style={styles.primaryButtonText}>Add Assignment</Text>
+          </Pressable>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Trains</Text>
+          <Text style={styles.sectionTitle}>Active Assignments</Text>
 
-          {activeTrains.length === 0 ? (
+          {activeAssignments.length > 0 ? (
+            activeAssignments.map((assignment) => (
+              <View key={assignment.id} style={styles.assignmentCard}>
+                <View style={styles.assignmentHeader}>
+                  <View style={styles.assignmentHeaderText}>
+                    <Text style={styles.assignmentTitle}>
+                      {assignment.trainName}
+                    </Text>
+                    <Text style={styles.assignmentDate}>{assignment.date}</Text>
+                  </View>
+
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusBadgeText}>Active</Text>
+                  </View>
+                </View>
+
+                <View style={styles.assignmentRow}>
+                  <Text style={styles.assignmentLabel}>Conductor</Text>
+                  <Text style={styles.assignmentValue}>
+                    {getMemberName(members, assignment.conductorMemberId)}
+                  </Text>
+                </View>
+
+                <View style={styles.assignmentRow}>
+                  <Text style={styles.assignmentLabel}>Passenger</Text>
+                  <Text style={styles.assignmentValue}>
+                    {getMemberName(members, assignment.passengerMemberId)}
+                  </Text>
+                </View>
+
+                {assignment.notes ? (
+                  <Text style={styles.assignmentNotes}>{assignment.notes}</Text>
+                ) : null}
+
+                <View style={styles.actionRow}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => swapAssignmentMembers(assignment.id)}
+                  >
+                    <Text style={styles.secondaryButtonText}>Swap</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.completeButton}
+                    onPress={() => completeTrainAssignment(assignment.id)}
+                  >
+                    <Text style={styles.completeButtonText}>Complete</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => confirmDeleteAssignment(assignment.id)}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          ) : (
             <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No active train assignments</Text>
               <Text style={styles.emptyText}>
-                No active trains yet. Add one to start assigning members.
+                Add an assignment above to start building today&apos;s train
+                board.
               </Text>
             </View>
-          ) : (
-            activeTrains.map((train) => (
-              <TrainCard
-                key={train.id}
-                train={train}
-                members={members}
-                onSetConductor={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "conductor",
-                  })
-                }
-                onEditGuards={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "guards",
-                  })
-                }
-                onEditPassengers={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "passengers",
-                  })
-                }
-                onComplete={() => confirmCompleteTrain(train)}
-                onDelete={() => confirmDeleteTrain(train)}
-              />
-            ))
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Past Train Assignments</Text>
+          <Text style={styles.sectionTitle}>History</Text>
 
-          {completedTrains.length === 0 ? (
+          {completedAssignments.length > 0 ? (
+            completedAssignments.map((assignment) => (
+              <View key={assignment.id} style={styles.assignmentCard}>
+                <View style={styles.assignmentHeader}>
+                  <View style={styles.assignmentHeaderText}>
+                    <Text style={styles.assignmentTitle}>
+                      {assignment.trainName}
+                    </Text>
+                    <Text style={styles.assignmentDate}>{assignment.date}</Text>
+                  </View>
+
+                  <View style={styles.completedBadge}>
+                    <Text style={styles.completedBadgeText}>Completed</Text>
+                  </View>
+                </View>
+
+                <View style={styles.assignmentRow}>
+                  <Text style={styles.assignmentLabel}>Conductor</Text>
+                  <Text style={styles.assignmentValue}>
+                    {getMemberName(members, assignment.conductorMemberId)}
+                  </Text>
+                </View>
+
+                <View style={styles.assignmentRow}>
+                  <Text style={styles.assignmentLabel}>Passenger</Text>
+                  <Text style={styles.assignmentValue}>
+                    {getMemberName(members, assignment.passengerMemberId)}
+                  </Text>
+                </View>
+
+                {assignment.notes ? (
+                  <Text style={styles.assignmentNotes}>{assignment.notes}</Text>
+                ) : null}
+
+                <View style={styles.actionRow}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => reopenTrainAssignment(assignment.id)}
+                  >
+                    <Text style={styles.secondaryButtonText}>Reopen</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => confirmDeleteAssignment(assignment.id)}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          ) : (
             <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No train history yet</Text>
               <Text style={styles.emptyText}>
-                Completed train assignments will appear here.
+                Completed assignments will appear here.
               </Text>
             </View>
-          ) : (
-            completedTrains.map((train) => (
-              <HistoryTrainCard
-                key={train.id}
-                train={train}
-                members={members}
-                onReopen={() => reopenTrainAssignment(train.id)}
-                onDelete={() => confirmDeleteTrain(train)}
-              />
-            ))
           )}
         </View>
       </ScrollView>
-
-      <Modal
-        visible={!!pickerState}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerState(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {pickerState ? getPickerTitle(pickerState.mode) : "Members"}
-              </Text>
-
-              <Pressable
-                onPress={() => setPickerState(null)}
-                hitSlop={10}
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                <Text style={styles.modalClose}>Done</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.memberList}>
-              {members.map((member) => {
-                const selected = isMemberSelected(member.id);
-
-                return (
-                  <Pressable
-                    key={member.id}
-                    onPress={() => toggleMember(member.id)}
-                    style={({ pressed }) => [
-                      styles.memberRow,
-                      selected && styles.memberRowSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View>
-                      <Text style={styles.memberName}>{member.username}</Text>
-                      <Text style={styles.memberMeta}>
-                        {member.rank} · HQ {member.hqLevel}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.checkmark}>{selected ? "✓" : ""}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
-
-function TrainCard({
-  train,
-  members,
-  onSetConductor,
-  onEditGuards,
-  onEditPassengers,
-  onComplete,
-  onDelete,
-}: {
-  train: TrainAssignment;
-  members: AllianceMember[];
-  onSetConductor: () => void;
-  onEditGuards: () => void;
-  onEditPassengers: () => void;
-  onComplete: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{train.name}</Text>
-        <Text style={styles.cardMeta}>Created {train.date}</Text>
-      </View>
-
-      <View style={styles.assignmentBlock}>
-        <AssignmentLine
-          label="Conductor"
-          value={getMemberName(members, train.conductorId)}
-          onPress={onSetConductor}
-        />
-
-        <AssignmentLine
-          label="Guards"
-          value={getMemberNames(members, train.guardIds)}
-          onPress={onEditGuards}
-        />
-
-        <AssignmentLine
-          label="Passengers"
-          value={getMemberNames(members, train.passengerIds)}
-          onPress={onEditPassengers}
-        />
-      </View>
-
-      <View style={styles.actionsRow}>
-        <Pressable
-          onPress={onComplete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.completeButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.completeButtonText}>Complete</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onDelete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.deleteButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function HistoryTrainCard({
-  train,
-  members,
-  onReopen,
-  onDelete,
-}: {
-  train: TrainAssignment;
-  members: AllianceMember[];
-  onReopen: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{train.name}</Text>
-        <Text style={styles.cardMeta}>
-          Completed {train.completedAt ?? train.date}
-        </Text>
-      </View>
-
-      <View style={styles.historyDetails}>
-        <Text style={styles.historyText}>
-          Conductor: {getMemberName(members, train.conductorId)}
-        </Text>
-        <Text style={styles.historyText}>
-          Guards: {getMemberNames(members, train.guardIds)}
-        </Text>
-        <Text style={styles.historyText}>
-          Passengers: {getMemberNames(members, train.passengerIds)}
-        </Text>
-      </View>
-
-      <View style={styles.actionsRow}>
-        <Pressable
-          onPress={onReopen}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.reopenButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.reopenButtonText}>Reopen</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onDelete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.deleteButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function AssignmentLine({
-  label,
-  value,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.assignmentLine,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View>
-        <Text style={styles.assignmentLabel}>{label}</Text>
-        <Text style={styles.assignmentValue}>{value}</Text>
-      </View>
-
-      <Text style={styles.assignmentEdit}>Edit</Text>
-    </Pressable>
+    </RequireActiveAlliance>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 40,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: 16,
-    gap: 18,
+  header: {
+    marginBottom: 20,
   },
-  headerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 16,
-  },
-  headerText: {
-    gap: 6,
+  eyebrow: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   title: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: "900",
+    marginBottom: 8,
   },
   subtitle: {
-    color: colors.muted,
-    lineHeight: 20,
-  },
-  section: {
-    gap: 10,
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  emptyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-  },
-  emptyText: {
-    color: colors.muted,
-    lineHeight: 20,
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 14,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    padding: 18,
+    marginBottom: 24,
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 2,
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "900",
+    marginBottom: 16,
   },
-  cardMeta: {
-    color: colors.muted,
-    marginTop: 2,
+  fieldGroup: {
+    marginBottom: 16,
   },
-  assignmentBlock: {
-    gap: 10,
+  label: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 8,
   },
-  assignmentLine: {
-    backgroundColor: colors.background,
+  input: {
+    minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
+    borderColor: "#d8d8d8",
+    backgroundColor: "#ffffff",
+    color: "#111111",
+    paddingHorizontal: 14,
+    fontSize: 16,
+  },
+  notesInput: {
+    minHeight: 86,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  memberPicker: {
+    paddingRight: 20,
+  },
+  memberChip: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d8d8d8",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    marginRight: 8,
+  },
+  memberChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  memberChipText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  memberChipTextActive: {
+    color: "#ffffff",
+  },
+  primaryButton: {
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    marginTop: 4,
+  },
+  primaryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  section: {
+    marginBottom: 26,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 21,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+  assignmentCard: {
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    padding: 16,
+    marginBottom: 12,
+  },
+  assignmentHeader: {
     flexDirection: "row",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 12,
+    marginBottom: 14,
+  },
+  assignmentHeaderText: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  assignmentTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  assignmentDate: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  statusBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(79, 70, 229, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statusBadgeText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  completedBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(34, 197, 94, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  completedBadgeText: {
+    color: "#15803d",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  assignmentRow: {
+    marginBottom: 10,
   },
   assignmentLabel: {
-    color: colors.muted,
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontWeight: "800",
+    marginBottom: 2,
+    textTransform: "uppercase",
   },
   assignmentValue: {
     color: colors.text,
+    fontSize: 15,
     fontWeight: "800",
   },
-  assignmentEdit: {
-    color: colors.primary,
-    fontWeight: "800",
-    alignSelf: "center",
+  assignmentNotes: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2,
+    marginBottom: 12,
   },
-  actionsRow: {
+  actionRow: {
     flexDirection: "row",
-    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 6,
   },
-  smallButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
-    alignItems: "center",
+  secondaryButton: {
+    minHeight: 38,
     justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d8d8d8",
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginTop: 8,
   },
-  completeButton: {
-    backgroundColor: colors.primary,
-  },
-  completeButtonText: {
-    color: "#fff",
+  secondaryButtonText: {
+    color: colors.text,
+    fontSize: 13,
     fontWeight: "900",
   },
-  reopenButton: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+  completeButton: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginTop: 8,
   },
-  reopenButtonText: {
-    color: colors.text,
+  completeButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
     fontWeight: "900",
   },
   deleteButton: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 12,
     backgroundColor: "#fee2e2",
-    borderWidth: 1,
-    borderColor: "#fecaca",
+    paddingHorizontal: 14,
+    marginTop: 8,
   },
   deleteButtonText: {
     color: "#b91c1c",
+    fontSize: 13,
     fontWeight: "900",
   },
-  historyDetails: {
-    gap: 5,
+  emptyCard: {
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    padding: 18,
   },
-  historyText: {
-    color: colors.muted,
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 14,
     lineHeight: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    maxHeight: "82%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 16,
-    gap: 12,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  modalTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  modalClose: {
-    color: colors.primary,
-    fontWeight: "900",
-    fontSize: 16,
-  },
-  memberList: {
-    gap: 10,
-    paddingBottom: 24,
-  },
-  memberRow: {
-    backgroundColor: colors.background,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  memberRowSelected: {
-    borderColor: colors.primary,
-  },
-  memberName: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  memberMeta: {
-    color: colors.muted,
-    marginTop: 2,
-  },
-  checkmark: {
-    color: colors.primary,
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  pressed: {
-    opacity: 0.65,
   },
 });
