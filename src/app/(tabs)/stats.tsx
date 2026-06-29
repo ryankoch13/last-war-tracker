@@ -59,7 +59,7 @@ export default function StatsScreen() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [date, setDate] = useState(todayString());
   const [donationsInput, setDonationsInput] = useState("");
-  const [versusPointsInput, setVersusPointsInput] = useState("");
+  const [vsScoreInput, setvsScoreInput] = useState("");
   const [notes, setNotes] = useState("");
 
   const activeMembers = useMemo(() => {
@@ -140,16 +140,16 @@ export default function StatsScreen() {
     return sum + Number(stat.donations ?? 0);
   }, 0);
 
-  const todayVersusPoints = todayStats.reduce((sum, stat) => {
-    return sum + Number(stat.versusPoints ?? 0);
+  const todayvsScore = todayStats.reduce((sum, stat) => {
+    return sum + Number(stat.vsScore ?? 0);
   }, 0);
 
   const weekDonations = weekStats.reduce((sum, stat) => {
     return sum + Number(stat.donations ?? 0);
   }, 0);
 
-  const weekVersusPoints = weekStats.reduce((sum, stat) => {
-    return sum + Number(stat.versusPoints ?? 0);
+  const weekvsScore = weekStats.reduce((sum, stat) => {
+    return sum + Number(stat.vsScore ?? 0);
   }, 0);
 
   const selectedMemberWeekDonations = selectedMemberWeekStats.reduce(
@@ -157,8 +157,8 @@ export default function StatsScreen() {
     0,
   );
 
-  const selectedMemberWeekVersusPoints = selectedMemberWeekStats.reduce(
-    (sum, stat) => sum + Number(stat.versusPoints ?? 0),
+  const selectedMemberWeekvsScore = selectedMemberWeekStats.reduce(
+    (sum, stat) => sum + Number(stat.vsScore ?? 0),
     0,
   );
 
@@ -180,13 +180,13 @@ export default function StatsScreen() {
   useEffect(() => {
     if (selectedDayStat) {
       setDonationsInput(String(selectedDayStat.donations ?? 0));
-      setVersusPointsInput(String(selectedDayStat.versusPoints ?? 0));
+      setvsScoreInput(String(selectedDayStat.vsScore ?? 0));
       setNotes(selectedDayStat.notes ?? "");
       return;
     }
 
     setDonationsInput("");
-    setVersusPointsInput("");
+    setvsScoreInput("");
     setNotes("");
   }, [selectedDayStat]);
 
@@ -204,14 +204,14 @@ export default function StatsScreen() {
     }
 
     const donations = parseStatNumber(donationsInput);
-    const versusPoints = parseStatNumber(versusPointsInput);
+    const vsScore = parseStatNumber(vsScoreInput);
     const trimmedNotes = notes.trim();
 
     if (selectedDayStat) {
       updateDailyStat(selectedDayStat.id, {
         date: trimmedDate,
         donations,
-        versusPoints,
+        vsScore,
         notes: trimmedNotes,
       });
     } else {
@@ -219,7 +219,7 @@ export default function StatsScreen() {
         memberId: selectedMemberId,
         date: trimmedDate,
         donations,
-        versusPoints,
+        vsScore,
         notes: trimmedNotes,
         updatedAt: new Date().toISOString(),
       });
@@ -283,7 +283,7 @@ export default function StatsScreen() {
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Today&apos;s VS</Text>
             <Text style={styles.summaryValue}>
-              {formatNumber(todayVersusPoints)}
+              {formatNumber(todayvsScore)}
             </Text>
           </View>
 
@@ -296,9 +296,7 @@ export default function StatsScreen() {
 
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>7-Day VS</Text>
-            <Text style={styles.summaryValue}>
-              {formatNumber(weekVersusPoints)}
-            </Text>
+            <Text style={styles.summaryValue}>{formatNumber(weekvsScore)}</Text>
           </View>
         </View>
 
@@ -360,7 +358,7 @@ export default function StatsScreen() {
                 7-day donations: {formatNumber(selectedMemberWeekDonations)}
               </Text>
               <Text style={styles.selectedMemberMeta}>
-                7-day VS: {formatNumber(selectedMemberWeekVersusPoints)}
+                7-day VS: {formatNumber(selectedMemberWeekvsScore)}
               </Text>
             </View>
           ) : null}
@@ -394,8 +392,8 @@ export default function StatsScreen() {
             <View style={styles.fieldColumn}>
               <Text style={styles.label}>VS Points</Text>
               <TextInput
-                value={versusPointsInput}
-                onChangeText={setVersusPointsInput}
+                value={vsScoreInput}
+                onChangeText={setvsScoreInput}
                 placeholder="0"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="number-pad"
@@ -458,7 +456,7 @@ export default function StatsScreen() {
                   <Text style={styles.statNumberLabel}>Donations</Text>
 
                   <Text style={[styles.statNumber, styles.statNumberSpacing]}>
-                    {formatNumber(Number(stat.versusPoints ?? 0))}
+                    {formatNumber(Number(stat.vsScore ?? 0))}
                   </Text>
                   <Text style={styles.statNumberLabel}>VS</Text>
                 </View>

@@ -18,7 +18,7 @@ import type { AllianceMember } from "@/types/alliance";
 type StatFormState = {
   editingStatId?: string;
   date: string;
-  versusPoints: string;
+  vsScore: string;
   donations: string;
   notes: string;
 };
@@ -57,7 +57,7 @@ function getMemberDisplayName(member?: AllianceMember) {
 
 const emptyForm: StatFormState = {
   date: getTodayDateKey(),
-  versusPoints: "",
+  vsScore: "",
   donations: "",
   notes: "",
 };
@@ -112,12 +112,12 @@ export default function MemberStatsScreen() {
   const totals = useMemo(() => {
     return memberStats.reduce(
       (acc, stat) => {
-        acc.versusPoints += stat.versusPoints;
+        acc.vsScore += stat.vsScore;
         acc.donations += stat.donations;
         return acc;
       },
       {
-        versusPoints: 0,
+        vsScore: 0,
         donations: 0,
       },
     );
@@ -136,7 +136,7 @@ export default function MemberStatsScreen() {
     setForm({
       editingStatId: stat.id,
       date: stat.date,
-      versusPoints: String(stat.versusPoints),
+      vsScore: String(stat.vsScore),
       donations: String(stat.donations),
       notes: stat.notes ?? "",
     });
@@ -155,10 +155,10 @@ export default function MemberStatsScreen() {
       return;
     }
 
-    const versusPoints = Number(form.versusPoints || 0);
+    const vsScore = Number(form.vsScore || 0);
     const donations = Number(form.donations || 0);
 
-    if (Number.isNaN(versusPoints) || Number.isNaN(donations)) {
+    if (Number.isNaN(vsScore) || Number.isNaN(donations)) {
       Alert.alert(
         "Invalid values",
         "Versus points and donations must be numbers.",
@@ -166,7 +166,7 @@ export default function MemberStatsScreen() {
       return;
     }
 
-    if (versusPoints < 0 || donations < 0) {
+    if (vsScore < 0 || donations < 0) {
       Alert.alert("Invalid values", "Values cannot be negative.");
       return;
     }
@@ -179,13 +179,13 @@ export default function MemberStatsScreen() {
       updateDailyStat(form.editingStatId, {
         memberId: selectedMemberId,
         date: trimmedDate,
-        versusPoints,
+        vsScore,
         donations,
         notes: form.notes.trim(),
       });
     } else if (existingStatForDate) {
       updateDailyStat(existingStatForDate.id, {
-        versusPoints,
+        vsScore,
         donations,
         notes: form.notes.trim(),
       });
@@ -193,7 +193,7 @@ export default function MemberStatsScreen() {
       addDailyStat({
         memberId: selectedMemberId,
         date: trimmedDate,
-        versusPoints,
+        vsScore,
         donations,
         notes: form.notes.trim(),
       });
@@ -248,7 +248,7 @@ export default function MemberStatsScreen() {
                 <View style={styles.summaryBox}>
                   <Text style={styles.summaryLabel}>Total VS</Text>
                   <Text style={styles.summaryValue}>
-                    {totals.versusPoints.toLocaleString()}
+                    {totals.vsScore.toLocaleString()}
                   </Text>
                 </View>
 
@@ -287,7 +287,7 @@ export default function MemberStatsScreen() {
                     >
                       <Text style={styles.dayDate}>{dateKey.slice(5)}</Text>
                       <Text style={styles.dayValue}>
-                        VS: {stat?.versusPoints.toLocaleString() ?? "—"}
+                        VS: {stat?.vsScore.toLocaleString() ?? "—"}
                       </Text>
                       <Text style={styles.dayValue}>
                         Don: {stat?.donations.toLocaleString() ?? "—"}
@@ -323,11 +323,11 @@ export default function MemberStatsScreen() {
                 <View style={styles.field}>
                   <Text style={styles.label}>Versus Points</Text>
                   <TextInput
-                    value={form.versusPoints}
-                    onChangeText={(versusPoints) =>
+                    value={form.vsScore}
+                    onChangeText={(vsScore) =>
                       setForm((current) => ({
                         ...current,
-                        versusPoints,
+                        vsScore,
                       }))
                     }
                     placeholder="0"
@@ -399,7 +399,7 @@ export default function MemberStatsScreen() {
                     <View>
                       <Text style={styles.statDate}>{stat.date}</Text>
                       <Text style={styles.statMeta}>
-                        VS {stat.versusPoints.toLocaleString()} · Donations{" "}
+                        VS {stat.vsScore.toLocaleString()} · Donations{" "}
                         {stat.donations.toLocaleString()}
                       </Text>
 

@@ -59,10 +59,10 @@ export type AllianceMemberWithStats = AllianceMember & {
   weeklyVsScore: number;
 
   /**
-   * Alias for screens/components that already use "versusPoints"
+   * Alias for screens/components that already use "vsScore"
    * wording instead of "VS score".
    */
-  weeklyVersusPoints: number;
+  weeklyvsScore: number;
 
   statsThisWeek: DailyMemberStat[];
 };
@@ -360,7 +360,7 @@ function buildMembersWithStats(
       ...member,
       weeklyDonations,
       weeklyVsScore,
-      weeklyVersusPoints: weeklyVsScore,
+      weeklyvsScore: weeklyVsScore,
       statsThisWeek: sortDailyStats(statsThisWeek),
     };
   });
@@ -427,7 +427,7 @@ function mapDailyStat(row: any): DailyMemberStat {
     memberId: row.member_id,
     date: normalizeDateKey(row.date),
     donations: Number(row.donations ?? 0),
-    vsScore: Number(row.versus_points ?? row.versusPoints ?? 0),
+    vsScore: Number(row.versus_points ?? row.vsScore ?? 0),
     notes: row.notes ?? null,
     createdAt: row.created_at ?? nowIso(),
     updatedAt: row.updated_at ?? null,

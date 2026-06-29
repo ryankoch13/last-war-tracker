@@ -18,7 +18,7 @@ type UpdateMyDailyStatsInput = {
   allianceId: string;
   date: string;
   donations: number;
-  versusPoints: number;
+  vsScore: number;
 };
 
 export async function getMyDailyStats(
@@ -44,7 +44,7 @@ export async function updateMyDailyStats({
   allianceId,
   date,
   donations,
-  versusPoints,
+  vsScore,
 }: UpdateMyDailyStatsInput): Promise<DailyMemberStats> {
   const member = await getCurrentUserMember(allianceId);
 
@@ -56,7 +56,7 @@ export async function updateMyDailyStats({
         member_id: member.id,
         date,
         donations,
-        vs_score: versusPoints,
+        vs_score: vsScore,
         updated_at: new Date().toISOString(),
       },
       {

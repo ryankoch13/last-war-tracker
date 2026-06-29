@@ -345,11 +345,7 @@ function getStatDate(stat: any) {
 
 function getStatVsScore(stat: any) {
   return Number(
-    stat.vsScore ??
-      stat.vs_score ??
-      stat.versusPoints ??
-      stat.versus_points ??
-      0,
+    stat.vsScore ?? stat.vs_score ?? stat.vsScore ?? stat.versus_points ?? 0,
   );
 }
 

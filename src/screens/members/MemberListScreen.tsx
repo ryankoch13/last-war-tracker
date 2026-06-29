@@ -82,7 +82,7 @@ export function MemberListScreen() {
       string,
       {
         donations: number;
-        versusPoints: number;
+        vsScore: number;
       }
     >();
 
@@ -91,12 +91,12 @@ export function MemberListScreen() {
       .forEach((stat) => {
         const existing = totals.get(stat.memberId) ?? {
           donations: 0,
-          versusPoints: 0,
+          vsScore: 0,
         };
 
         totals.set(stat.memberId, {
           donations: existing.donations + Number(stat.donations ?? 0),
-          versusPoints: existing.versusPoints + Number(stat.versusPoints ?? 0),
+          vsScore: existing.vsScore + Number(stat.vsScore ?? 0),
         });
       });
 
@@ -156,7 +156,7 @@ export function MemberListScreen() {
   function renderMemberCard(member: AllianceMember) {
     const weeklyTotals = weeklyTotalsByMemberId.get(member.id) ?? {
       donations: 0,
-      versusPoints: 0,
+      vsScore: 0,
     };
 
     return (
@@ -185,7 +185,7 @@ export function MemberListScreen() {
           <View style={styles.memberStat}>
             <Text style={styles.memberStatLabel}>Weekly VS</Text>
             <Text style={styles.memberStatValue}>
-              {formatCompactNumber(weeklyTotals.versusPoints)}
+              {formatCompactNumber(weeklyTotals.vsScore)}
             </Text>
           </View>
 
