@@ -1,7 +1,8 @@
-import { useRouter } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,211 +12,169 @@ import {
   View,
 } from "react-native";
 
-import {
-  createAllianceAndMember,
-  joinAllianceAndClaimMember,
-} from "../services/allianceSetup";
-import { useAllianceStore } from "../store/allianceStore";
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
+import { useAllianceStore } from "@/store/allianceStore";
+import { colors } from "@/theme/colors";
 
 type SetupMode = "create" | "join";
 
 export default function AllianceSetupScreen() {
-  const router = useRouter();
-
-  const loadAlliance = useAllianceStore((state) => state.loadAlliance);
-
   const [mode, setMode] = useState<SetupMode>("create");
   const [allianceName, setAllianceName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [memberName, setMemberName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const createAllianceAndMember = useAllianceStore(
+    (state) => state.createAllianceAndMember,
+  );
+
+  const joinAllianceByInviteCode = useAllianceStore(
+    (state) => state.joinAllianceByInviteCode,
+  );
+
+  const { loadActiveAlliance } = useActiveAlliance();
 
   const isCreateMode = mode === "create";
 
-  const handleSubmit = async () => {
-    if (submitting) {
-      return;
+  function validateFields() {
+    if (!memberName.trim()) {
+      Alert.alert("Missing member name", "Enter your in-game member name.");
+      return false;
     }
 
-    setErrorMessage("");
-
-    const cleanMemberName = memberName.trim();
-    const cleanAllianceName = allianceName.trim();
-    const cleanInviteCode = inviteCode.trim();
-
-    if (!cleanMemberName) {
-      setErrorMessage("Enter your in-game member name.");
-      return;
+    if (isCreateMode && !allianceName.trim()) {
+      Alert.alert("Missing alliance name", "Enter your alliance name.");
+      return false;
     }
 
-    if (isCreateMode && !cleanAllianceName) {
-      setErrorMessage("Enter an alliance name.");
-      return;
+    if (!isCreateMode && !inviteCode.trim()) {
+      Alert.alert("Missing invite code", "Enter your alliance invite code.");
+      return false;
     }
 
-    if (!isCreateMode && !cleanInviteCode) {
-      setErrorMessage("Enter an invite code.");
+    return true;
+  }
+
+  async function handleSubmit() {
+    if (!validateFields()) {
       return;
     }
 
     try {
-      setSubmitting(true);
+      setSaving(true);
 
-      const result = isCreateMode
-        ? await createAllianceAndMember(cleanAllianceName, cleanMemberName)
-        : await joinAllianceAndClaimMember(cleanInviteCode, cleanMemberName);
-
-      console.log("ALLIANCE SETUP SUCCESS:", result);
-
-      await loadAlliance(true);
-
-      const loadedAlliance = useAllianceStore.getState().alliance;
-
-      console.log("LOADED ALLIANCE AFTER SETUP:", loadedAlliance);
-
-      if (!loadedAlliance) {
-        throw new Error(
-          "Alliance was created, but the app could not load it. Check allianceStore.ts.",
+      if (isCreateMode) {
+        await createAllianceAndMember(allianceName.trim(), memberName.trim());
+      } else {
+        await joinAllianceByInviteCode(
+          inviteCode.trim().toUpperCase(),
+          memberName.trim(),
         );
       }
 
-      router.replace("/(tabs)/members");
+      await loadActiveAlliance();
+
+      const { activeAllianceId } = useAllianceStore.getState();
+
+      if (activeAllianceId) {
+        router.replace("/(tabs)/members");
+        return;
+      }
+
+      Alert.alert(
+        "Alliance setup incomplete",
+        "Your account was updated, but the app could not load the active alliance. Try signing out and back in.",
+      );
     } catch (error) {
       console.error("ALLIANCE SETUP ERROR:", error);
 
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong setting up your alliance.",
+      Alert.alert(
+        isCreateMode ? "Could not create alliance" : "Could not join alliance",
+        error instanceof Error ? error.message : "Something went wrong.",
       );
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const switchMode = (nextMode: SetupMode) => {
-    setMode(nextMode);
-    setErrorMessage("");
-  };
+  function toggleMode() {
+    setMode(isCreateMode ? "join" : "create");
+  }
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Last War Tracker</Text>
-          <Text style={styles.title}>Set up your alliance</Text>
-          <Text style={styles.subtitle}>
-            Create a new alliance workspace or join an existing one with an
-            invite code.
-          </Text>
-        </View>
-
-        <View style={styles.modeRow}>
-          <Pressable
-            style={[styles.modeButton, isCreateMode && styles.modeButtonActive]}
-            onPress={() => switchMode("create")}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                isCreateMode && styles.modeButtonTextActive,
-              ]}
-            >
-              Create
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.modeButton,
-              !isCreateMode && styles.modeButtonActive,
-            ]}
-            onPress={() => switchMode("join")}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                !isCreateMode && styles.modeButtonTextActive,
-              ]}
-            >
-              Join
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.card}>
-          {isCreateMode ? (
-            <View style={styles.field}>
-              <Text style={styles.label}>Alliance name</Text>
-              <TextInput
-                value={allianceName}
-                onChangeText={setAllianceName}
-                placeholder="Example: Server 123 Legends"
-                placeholderTextColor="#8A8A8A"
-                autoCapitalize="words"
-                autoCorrect={false}
-                style={styles.input}
-              />
-            </View>
-          ) : (
-            <View style={styles.field}>
-              <Text style={styles.label}>Invite code</Text>
-              <TextInput
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder="Example: ABCD1234"
-                placeholderTextColor="#8A8A8A"
-                autoCapitalize="characters"
-                autoCorrect={false}
-                style={styles.input}
-              />
-            </View>
-          )}
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Your in-game name</Text>
-            <TextInput
-              value={memberName}
-              onChangeText={setMemberName}
-              placeholder="Example: Ryan"
-              placeholderTextColor="#8A8A8A"
-              autoCapitalize="words"
-              autoCorrect={false}
-              style={styles.input}
-            />
-          </View>
-
-          {errorMessage ? (
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          ) : null}
-
-          <Pressable
-            style={[
-              styles.submitButton,
-              submitting && styles.submitButtonDisabled,
-            ]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitButtonText}>
-                {isCreateMode ? "Create alliance" : "Join alliance"}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-
-        <Text style={styles.footerText}>
-          {isCreateMode
-            ? "You will become the owner of this alliance workspace."
-            : "Joining links your account to the alliance workspace."}
+      <View style={styles.card}>
+        <Text style={styles.title}>
+          {isCreateMode ? "Set Up Your Alliance" : "Join an Alliance"}
         </Text>
+
+        <Text style={styles.subtitle}>
+          {isCreateMode
+            ? "Create your alliance board and become the R5 for this alliance."
+            : "Enter an invite code from your R4 or R5 to join an existing alliance."}
+        </Text>
+
+        <TextInput
+          value={memberName}
+          onChangeText={setMemberName}
+          placeholder="Your in-game name"
+          autoCapitalize="words"
+          autoCorrect={false}
+          style={styles.input}
+          placeholderTextColor={colors.muted}
+        />
+
+        {isCreateMode ? (
+          <TextInput
+            value={allianceName}
+            onChangeText={setAllianceName}
+            placeholder="Alliance name"
+            autoCapitalize="words"
+            autoCorrect={false}
+            style={styles.input}
+            placeholderTextColor={colors.muted}
+          />
+        ) : (
+          <TextInput
+            value={inviteCode}
+            onChangeText={(text) => setInviteCode(text.toUpperCase())}
+            placeholder="Invite code"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={styles.input}
+            placeholderTextColor={colors.muted}
+          />
+        )}
+
+        <Pressable
+          onPress={handleSubmit}
+          disabled={saving}
+          style={[styles.button, saving && styles.disabledButton]}
+        >
+          {saving ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {isCreateMode ? "Create Alliance" : "Join Alliance"}
+            </Text>
+          )}
+        </Pressable>
+
+        <Pressable onPress={toggleMode} disabled={saving}>
+          <Text style={styles.linkText}>
+            {isCreateMode
+              ? "Already have an invite code? Join an alliance"
+              : "Need to create a new alliance?"}
+          </Text>
+        </Pressable>
+
+        <Pressable onPress={() => router.replace("/sign-in")} disabled={saving}>
+          <Text style={styles.secondaryLinkText}>Back to sign in</Text>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
@@ -224,110 +183,66 @@ export default function AllianceSetupScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#111827",
-  },
-  container: {
-    flex: 1,
     justifyContent: "center",
-    padding: 24,
-  },
-  header: {
-    marginBottom: 28,
-  },
-  eyebrow: {
-    color: "#A78BFA",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  title: {
-    color: "#FFFFFF",
-    fontSize: 32,
-    fontWeight: "800",
-    marginBottom: 10,
-  },
-  subtitle: {
-    color: "#CBD5E1",
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  modeRow: {
-    flexDirection: "row",
-    backgroundColor: "#1F2937",
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 18,
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  modeButtonActive: {
-    backgroundColor: "#7C3AED",
-  },
-  modeButtonText: {
-    color: "#CBD5E1",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  modeButtonTextActive: {
-    color: "#FFFFFF",
+    padding: 20,
+    backgroundColor: colors.background,
   },
   card: {
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 20,
     padding: 20,
+    gap: 12,
+    backgroundColor: colors.surface,
   },
-  field: {
-    marginBottom: 16,
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    textAlign: "center",
+    color: colors.text,
   },
-  label: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: "700",
+  subtitle: {
+    fontSize: 15,
+    textAlign: "center",
     marginBottom: 8,
+    color: colors.muted,
+    lineHeight: 21,
   },
   input: {
-    backgroundColor: "#F9FAFB",
-    borderColor: "#D1D5DB",
     borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 12,
-    color: "#111827",
-    fontSize: 16,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 12,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: "white",
   },
-  errorText: {
-    color: "#DC2626",
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 14,
-  },
-  submitButton: {
-    backgroundColor: "#7C3AED",
+  button: {
+    backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
-    justifyContent: "center",
-    minHeight: 52,
+    marginTop: 4,
   },
-  submitButtonDisabled: {
-    opacity: 0.7,
+  disabledButton: {
+    opacity: 0.6,
   },
-  submitButtonText: {
-    color: "#FFFFFF",
+  buttonText: {
+    color: "white",
     fontSize: 16,
     fontWeight: "800",
   },
-  footerText: {
-    color: "#CBD5E1",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 18,
+  linkText: {
+    color: colors.primary,
+    fontWeight: "700",
     textAlign: "center",
+    marginTop: 8,
+  },
+  secondaryLinkText: {
+    color: colors.muted,
+    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 4,
   },
 });

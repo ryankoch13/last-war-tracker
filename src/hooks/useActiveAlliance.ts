@@ -1,37 +1,69 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 
-import { useAllianceStore } from "../store/allianceStore";
+import { useAllianceStore } from "@/store/allianceStore";
 
 export function useActiveAlliance() {
-  const alliance = useAllianceStore((state) => state.alliance);
+  const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
+  const activeAlliance = useAllianceStore((state) => state.activeAlliance);
   const allianceUser = useAllianceStore((state) => state.allianceUser);
   const loading = useAllianceStore((state) => state.loading);
-  const hasLoaded = useAllianceStore((state) => state.hasLoaded);
   const error = useAllianceStore((state) => state.error);
-  const loadAlliance = useAllianceStore((state) => state.loadAlliance);
 
-  useEffect(() => {
-    if (!hasLoaded && !loading) {
-      loadAlliance();
-    }
-  }, [hasLoaded, loading, loadAlliance]);
+  const loadActiveAlliance = useAllianceStore(
+    (state) => state.loadActiveAlliance,
+  );
 
-  return {
-    alliance,
-    allianceUser,
+  const clearAlliance = useAllianceStore((state) => state.clearAlliance);
 
-    activeAlliance: alliance,
-    activeAllianceId: alliance?.id ?? null,
+  const role = allianceUser?.role ?? null;
+  const normalizedRole = role?.toUpperCase() ?? null;
 
-    loading,
-    hasLoaded,
-    error,
-    hasActiveAlliance: !!alliance,
-  };
+  const canManageAlliance =
+    normalizedRole === "R4" ||
+    normalizedRole === "R5" ||
+    normalizedRole === "ADMIN" ||
+    normalizedRole === "OWNER";
+
+  return useMemo(
+    () => ({
+      activeAllianceId,
+      activeAlliance,
+      allianceUser,
+      loading,
+      error,
+      role,
+      normalizedRole,
+      canManageAlliance,
+      loadActiveAlliance,
+      clearAlliance,
+    }),
+    [
+      activeAllianceId,
+      activeAlliance,
+      allianceUser,
+      loading,
+      error,
+      role,
+      normalizedRole,
+      canManageAlliance,
+      loadActiveAlliance,
+      clearAlliance,
+    ],
+  );
 }
 
 export function useActiveAllianceId() {
-  const alliance = useAllianceStore((state) => state.alliance);
+  return useAllianceStore((state) => state.activeAllianceId);
+}
 
-  return alliance?.id ?? null;
+export function useAllianceUser() {
+  return useAllianceStore((state) => state.allianceUser);
+}
+
+export function useCanManageAlliance() {
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
+
+  const role = allianceUser?.role?.toUpperCase();
+
+  return role === "R4" || role === "R5" || role === "ADMIN" || role === "OWNER";
 }

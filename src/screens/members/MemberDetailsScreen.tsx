@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
@@ -9,12 +10,37 @@ import { formatCompactNumber, formatNumber } from "../../utils/format";
 
 export function MemberDetailScreen() {
   const router = useRouter();
-  const { memberId } = useLocalSearchParams<{ memberId: string }>();
+  const params = useLocalSearchParams<{ memberId?: string | string[] }>();
 
-  const member = useAllianceStore((state) =>
-    memberId ? state.getMemberById(memberId) : undefined,
-  );
+  const memberId = Array.isArray(params.memberId)
+    ? params.memberId[0]
+    : params.memberId;
+
+  const members = useAllianceStore((state) => state.members);
+  const dailyStats = useAllianceStore((state) => state.dailyStats);
   const deleteMember = useAllianceStore((state) => state.deleteMember);
+
+  const member = useMemo(() => {
+    if (!memberId) return undefined;
+    return members.find((item) => item.id === memberId);
+  }, [members, memberId]);
+
+  const memberDailyStats = useMemo(() => {
+    if (!memberId) return [];
+
+    return dailyStats
+      .filter((stat) => stat.memberId === memberId)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [dailyStats, memberId]);
+
+  const totalVs = useMemo(() => {
+    return memberDailyStats.reduce((total, stat) => total + stat.weeklyVs, 0);
+  }, [memberDailyStats]);
+
+  const totalDonations = useMemo(() => {
+    return memberDailyStats.reduce((total, stat) => total + stat.donations, 0);
+  }, [memberDailyStats]);
 
   if (!member) {
     return (
@@ -190,5 +216,19 @@ const styles = StyleSheet.create({
   notes: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  historyRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    marginTop: 10,
+    gap: 2,
+  },
+  historyDate: {
+    color: colors.text,
+    fontWeight: "800",
+  },
+  historyText: {
+    color: colors.muted,
   },
 });

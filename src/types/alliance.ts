@@ -24,28 +24,53 @@ export type ActiveAllianceState = {
 };
 
 export type AllianceEventType =
+  | "VS"
   | "Desert Storm"
-  | "Alliance Duel"
   | "Capital War"
+  | "Rare Soil"
   | "Train"
-  | "Rare Soil War"
   | "Custom";
 
 export type AllianceEvent = {
   id: string;
-  title: string;
+  name: string;
   type: AllianceEventType;
-  startsAt: string;
-  description?: string;
+  date: string; // "2026-06-27"
+  status: AllianceEventStatus;
   assignedMemberIds: string[];
+  notes?: string;
+  completedAt?: string;
 };
+
+export type TrainAssignmentStatus = "active" | "completed";
 
 export type TrainAssignment = {
   id: string;
-  trainName: string;
-  departureTime: string;
+  name: string;
+  date: string; // "2026-06-27"
+  status: TrainAssignmentStatus;
+
   conductorId?: string;
   guardIds: string[];
   passengerIds: string[];
+
   notes?: string;
+  completedAt?: string;
+};
+
+export type DailyMemberStat = {
+  id: string;
+  memberId: string;
+  date: string; // "2026-06-27"
+  weeklyVs: number;
+  donations: number;
+};
+
+export type StatMetric = "weeklyVs" | "donations";
+export type StatRange = "week" | "month";
+
+export type TopMemberStat = {
+  memberId: string;
+  memberName: string;
+  total: number;
 };
