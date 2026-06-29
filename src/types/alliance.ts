@@ -1,11 +1,12 @@
-export type AllianceRank = "R1" | "R2" | "R3" | "R4" | "R5";
+import { AllianceRole } from "@/store/allianceStore";
 
 export type SquadType = "Tank" | "Air" | "Missile" | "Mixed";
 
 export type AllianceMember = {
   id: string;
   username: string;
-  rank: AllianceRank;
+  alliance_id: string;
+  rank: AllianceRole;
   power: number;
   hqLevel: number;
   mainSquad: SquadType;
@@ -16,7 +17,11 @@ export type AllianceMember = {
   notes?: string;
 };
 
-export type AllianceEventStatus = "active" | "completed";
+export type ActiveAllianceState = {
+  userId: string | null;
+  member: AllianceMember | null;
+  activeAllianceId: string | null;
+};
 
 export type AllianceEventType =
   | "VS"

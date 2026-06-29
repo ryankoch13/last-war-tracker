@@ -1,6 +1,5 @@
+import { AllianceRole, useAllianceStore } from "@/store/allianceStore";
 import { useEffect } from "react";
-
-import { useAllianceStore } from "@/store/allianceStore";
 
 export function useActiveAlliance() {
   const activeAllianceId = useAllianceStore((state) => state.activeAllianceId);
@@ -44,10 +43,28 @@ export function useActiveAlliance() {
     hasActiveAlliance: Boolean(activeAllianceId && activeAlliance),
 
     canManageAlliance:
-      allianceUser?.role === "R4" || allianceUser?.role === "R5",
+      allianceUser?.role === AllianceRole.R4 ||
+      allianceUser?.role === AllianceRole.R5,
   };
 }
 
 export function useActiveAllianceId() {
   return useAllianceStore((state) => state.activeAllianceId);
+}
+
+export function useAllianceUser() {
+  return useAllianceStore((state) => state.allianceUser);
+}
+
+export function useCanManageAlliance() {
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
+
+  const role = allianceUser?.role?.toUpperCase();
+
+  return (
+    role === AllianceRole.R4 ||
+    role === AllianceRole.R5 ||
+    role === "ADMIN" ||
+    role === "OWNER"
+  );
 }

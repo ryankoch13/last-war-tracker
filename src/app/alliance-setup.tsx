@@ -18,6 +18,10 @@ import { colors } from "@/theme/colors";
 
 type SetupMode = "create" | "join";
 
+type RouterTarget = Parameters<typeof router.replace>[0];
+
+const TABS_ROUTE = "/(tabs)" as RouterTarget;
+
 export default function AllianceSetupScreen() {
   const [mode, setMode] = useState<SetupMode>("create");
 
@@ -37,37 +41,39 @@ export default function AllianceSetupScreen() {
 
   async function handleSubmit() {
     const trimmedMemberName = memberName.trim();
+    const trimmedAllianceName = allianceName.trim();
+    const trimmedInviteCode = inviteCode.trim().toUpperCase();
 
     if (!trimmedMemberName) {
       Alert.alert("Member name required", "Enter your in-game name.");
       return;
     }
 
-    if (isCreateMode && !allianceName.trim()) {
+    if (isCreateMode && !trimmedAllianceName) {
       Alert.alert("Alliance name required", "Enter your alliance name.");
       return;
     }
 
-    if (!isCreateMode && !inviteCode.trim()) {
+    if (!isCreateMode && !trimmedInviteCode) {
       Alert.alert("Invite code required", "Enter your alliance invite code.");
       return;
     }
 
     try {
       if (isCreateMode) {
-        await createAllianceAndMember(allianceName, trimmedMemberName);
+        await createAllianceAndMember(trimmedAllianceName, trimmedMemberName);
       } else {
-        await joinAllianceAndClaimMember(inviteCode, trimmedMemberName);
+        await joinAllianceAndClaimMember(trimmedInviteCode, trimmedMemberName);
       }
 
-      router.replace("/(tabs)");
+      router.replace(TABS_ROUTE);
     } catch (error) {
-      const message =
+      Alert.alert(
+        "Alliance setup failed",
         error instanceof Error
           ? error.message
-          : "Could not finish alliance setup.";
-
-      Alert.alert("Alliance setup failed", message);
+          : "Could not finish alliance setup.",
+      );
     }
   }
 
@@ -212,7 +218,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontSize: 28,
-    fontWeight: "800",
+    fontWeight: "900",
     marginBottom: 8,
   },
   subtitle: {
@@ -242,7 +248,7 @@ const styles = StyleSheet.create({
   modeOptionText: {
     color: colors.textMuted,
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
   },
   modeOptionTextActive: {
     color: "#ffffff",
@@ -253,7 +259,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.text,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
     marginBottom: 8,
   },
   input: {
@@ -280,6 +286,6 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#ffffff",
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: "900",
   },
 });

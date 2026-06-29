@@ -10,16 +10,20 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { AllianceEventType, useAllianceStore } from "@/store/allianceStore";
+import {
+  AllianceEventType,
+  BoardItemStatus,
+  useAllianceStore,
+} from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
-const EVENT_TYPES: AllianceEventType[] = [
-  "VS",
-  "Desert Storm",
-  "Capital War",
-  "Rare Soil",
-  "Train",
-  "Custom",
+const EVENT_TYPES = [
+  AllianceEventType.VS,
+  AllianceEventType.DesertStorm,
+  AllianceEventType.CapitalWar,
+  AllianceEventType.RareSoil,
+  AllianceEventType.Train,
+  AllianceEventType.Custom,
 ];
 
 function todayString() {
@@ -28,19 +32,19 @@ function todayString() {
 
 function getAssignedMemberNames(
   members: Array<{ id: string; name: string }>,
-  assignedMemberIds: string[] | undefined,
+  assignedMemberIds?: string[],
 ) {
   const safeAssignedMemberIds = assignedMemberIds ?? [];
 
   if (safeAssignedMemberIds.length === 0) {
-    return "No members assigned";
+    return "None assigned";
   }
 
-  const names = safeAssignedMemberIds.map((memberId) => {
-    return members.find((member) => member.id === memberId)?.name ?? "Unknown";
-  });
+  const names = safeAssignedMemberIds
+    .map((memberId) => members.find((member) => member.id === memberId)?.name)
+    .filter(Boolean);
 
-  return names.join(", ");
+  return names.length > 0 ? names.join(", ") : "None assigned";
 }
 
 export function EventBoardScreen() {
@@ -62,7 +66,7 @@ export function EventBoardScreen() {
   );
 
   const [name, setName] = useState("");
-  const [type, setType] = useState<AllianceEventType>("VS");
+  const [type, setType] = useState<AllianceEventType>(AllianceEventType.VS);
   const [date, setDate] = useState(todayString());
   const [notes, setNotes] = useState("");
   const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
@@ -76,12 +80,14 @@ export function EventBoardScreen() {
 
   const activeEvents = useMemo(() => {
     return events
-      .filter((event) => event.status !== "completed")
+      .filter((event) => event.status !== BoardItemStatus.Completed)
       .slice()
       .sort((a, b) => {
         const dateCompare = b.date.localeCompare(a.date);
 
-        if (dateCompare !== 0) return dateCompare;
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
 
         return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
       });
@@ -89,22 +95,19 @@ export function EventBoardScreen() {
 
   const completedEvents = useMemo(() => {
     return events
-      .filter((event) => event.status === "completed")
+      .filter((event) => event.status === BoardItemStatus.Completed)
       .slice()
       .sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
+        const aDate = a.completedAt ?? a.date ?? "";
+        const bDate = b.completedAt ?? b.date ?? "";
 
-        if (dateCompare !== 0) return dateCompare;
-
-        return (b.completedAt ?? b.createdAt ?? "").localeCompare(
-          a.completedAt ?? a.createdAt ?? "",
-        );
+        return bDate.localeCompare(aDate);
       });
   }, [events]);
 
   function resetForm() {
     setName("");
-    setType("VS");
+    setType(AllianceEventType.VS);
     setDate(todayString());
     setNotes("");
     setAssignedMemberIds([]);
@@ -134,7 +137,7 @@ export function EventBoardScreen() {
       date: date.trim() || todayString(),
       notes: notes.trim(),
       assignedMemberIds,
-      status: "active",
+      status: BoardItemStatus.Active,
       completedAt: null,
       updatedAt: new Date().toISOString(),
     });
@@ -142,8 +145,31 @@ export function EventBoardScreen() {
     resetForm();
   }
 
+  function clearAssignedMembersForEvent(eventId: string) {
+    updateAllianceEvent(eventId, {
+      assignedMemberIds: [],
+    });
+  }
+
+  function confirmCompleteEvent(eventId: string) {
+    Alert.alert(
+      "Complete event?",
+      "This will move the event to completed history.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Complete",
+          onPress: () => completeAllianceEvent(eventId),
+        },
+      ],
+    );
+  }
+
   function confirmDeleteEvent(eventId: string) {
-    Alert.alert("Delete event?", "This will remove the event from the board.", [
+    Alert.alert("Delete event?", "This will permanently remove this event.", [
       {
         text: "Cancel",
         style: "cancel",
@@ -154,12 +180,6 @@ export function EventBoardScreen() {
         onPress: () => deleteAllianceEvent(eventId),
       },
     ]);
-  }
-
-  function clearAssignedMembersForEvent(eventId: string) {
-    updateAllianceEvent(eventId, {
-      assignedMemberIds: [],
-    });
   }
 
   return (
@@ -330,7 +350,7 @@ export function EventBoardScreen() {
 
                   <Pressable
                     style={styles.completeButton}
-                    onPress={() => completeAllianceEvent(event.id)}
+                    onPress={() => confirmCompleteEvent(event.id)}
                   >
                     <Text style={styles.completeButtonText}>Complete</Text>
                   </Pressable>

@@ -1,6 +1,5 @@
 import { Stack, useRouter } from "expo-router";
 
-
 function SettingsHeaderButton() {
   const router = useRouter();
 }
