@@ -1,170 +1,250 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useMemo } from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { getAllianceEvents } from "@/lib/allianceEvents";
-import { getTrainAssignments } from "@/lib/trainAssignments";
-import { getAllianceMembers } from "@/services/allianceMembers";
-import { AllianceMember } from "@/types/alliance";
-import { StatCard } from "../components/StatCard";
-import { useAllianceStore } from "../store/allianceStore";
-import { colors } from "../theme/colors";
-import { formatCompactNumber, formatDateTime } from "../utils/format";
+import { BoardItemStatus, useAllianceStore } from "@/store/allianceStore";
+import { colors } from "@/theme/colors";
 
-type DashboardMember = {
-  id: string;
-  username?: string;
-  name?: string;
-  power: number;
-  weeklyVsScore: number;
-  weeklyDonations: number;
+const theme = colors as typeof colors & {
+  primary?: string;
+  textMuted?: string;
+  muted?: string;
+  surface?: string;
+  border?: string;
 };
 
-type DashboardEvent = {
-  id: string;
-  title: string;
-  type: string;
-  startsAt: string;
-};
+const primaryColor = theme.primary ?? "#6d28d9";
+const mutedColor = theme.textMuted ?? theme.muted ?? "#64748b";
+const surfaceColor = theme.surface ?? "#ffffff";
+const borderColor = theme.border ?? "#e5e7eb";
 
-type DashboardTrain = {
-  id: string;
-  trainName: string;
-  departureTime: string;
-  guardIds: string[];
-  passengerIds: string[];
-};
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDateDaysAgo(daysAgo: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatRole(role: string | null | undefined) {
+  return role ? role.toUpperCase() : "R1";
+}
+
+function StatCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string | number;
+  helper?: string;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+      {helper ? <Text style={styles.statHelper}>{helper}</Text> : null}
+    </View>
+  );
+}
 
 export function DashboardScreen() {
-  const alliance = useAllianceStore((state) => state.alliance);
-  const activeAllianceId = alliance?.id ?? null;
+  const activeAlliance = useAllianceStore((state) => state.activeAlliance);
+  const members = useAllianceStore((state) => state.members ?? []);
+  const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
+  const trainAssignments = useAllianceStore(
+    (state) => state.trainAssignments ?? [],
+  );
+  const events = useAllianceStore((state) => state.events ?? []);
 
-  const [members, setMembers] = useState<AllianceMember[]>([]);
-  const [events, setEvents] = useState<DashboardEvent[]>([]);
-  const [trains, setTrains] = useState<DashboardTrain[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const today = todayString();
+  const weekStart = getDateDaysAgo(6);
 
-  useEffect(() => {
-    if (!activeAllianceId) {
-      return;
-    }
+  const activeMembers = useMemo(() => {
+    return members.filter((member) => member.isActive !== false);
+  }, [members]);
 
-    let isMounted = true;
+  const totalPower = useMemo(() => {
+    return members.reduce((sum, member) => {
+      return sum + Number(member.power ?? 0);
+    }, 0);
+  }, [members]);
 
-    async function loadDashboardData() {
-      try {
-        setLoading(true);
-        setErrorMessage("");
+  const todaysStats = useMemo(() => {
+    return dailyStats.filter((stat) => stat.date === today);
+  }, [dailyStats, today]);
 
-        const [loadedMembers, loadedEvents, loadedTrains] = await Promise.all([
-          getAllianceMembers(activeAllianceId),
-          getAllianceEvents(activeAllianceId),
-          getTrainAssignments(activeAllianceId),
-        ]);
+  const weekStats = useMemo(() => {
+    return dailyStats.filter((stat) => {
+      return stat.date >= weekStart && stat.date <= today;
+    });
+  }, [dailyStats, today, weekStart]);
 
-        if (!isMounted) {
-          return;
-        }
+  const todaysDonations = useMemo(() => {
+    return todaysStats.reduce((sum, stat) => {
+      return sum + Number(stat.donations ?? 0);
+    }, 0);
+  }, [todaysStats]);
 
-        setMembers(loadedMembers ?? []);
-        setEvents(loadedEvents ?? []);
-        setTrains(loadedTrains ?? []);
-      } catch (error) {
-        console.error("DASHBOARD LOAD ERROR:", error);
+  const todaysVersusPoints = useMemo(() => {
+    return todaysStats.reduce((sum, stat) => {
+      return sum + Number(stat.versusPoints ?? 0);
+    }, 0);
+  }, [todaysStats]);
 
-        if (isMounted) {
-          setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : "Could not load dashboard data.",
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+  const weeklyDonations = useMemo(() => {
+    return weekStats.reduce((sum, stat) => {
+      return sum + Number(stat.donations ?? 0);
+    }, 0);
+  }, [weekStats]);
+
+  const weeklyVersusPoints = useMemo(() => {
+    return weekStats.reduce((sum, stat) => {
+      return sum + Number(stat.versusPoints ?? 0);
+    }, 0);
+  }, [weekStats]);
+
+  const memberWeeklyTotals = useMemo(() => {
+    const totals = new Map<
+      string,
+      {
+        donations: number;
+        versusPoints: number;
       }
-    }
+    >();
 
-    loadDashboardData();
+    weekStats.forEach((stat) => {
+      const existing = totals.get(stat.memberId) ?? {
+        donations: 0,
+        versusPoints: 0,
+      };
 
-    return () => {
-      isMounted = false;
-    };
-  }, [activeAllianceId]);
+      totals.set(stat.memberId, {
+        donations: existing.donations + Number(stat.donations ?? 0),
+        versusPoints: existing.versusPoints + Number(stat.versusPoints ?? 0),
+      });
+    });
+
+    return totals;
+  }, [weekStats]);
 
   const topVsMember = useMemo(() => {
-    return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
-  }, [members]);
+    return activeMembers.slice().sort((a, b) => {
+      const aTotal = memberWeeklyTotals.get(a.id)?.versusPoints ?? 0;
+      const bTotal = memberWeeklyTotals.get(b.id)?.versusPoints ?? 0;
+
+      return bTotal - aTotal;
+    })[0];
+  }, [activeMembers, memberWeeklyTotals]);
+
+  const topVsTotal = topVsMember
+    ? (memberWeeklyTotals.get(topVsMember.id)?.versusPoints ?? 0)
+    : 0;
 
   const lowDonationMembers = useMemo(() => {
-    return members.filter((member) => member.weeklyDonations < 30000);
-  }, [members]);
+    return activeMembers.filter((member) => {
+      const donations = memberWeeklyTotals.get(member.id)?.donations ?? 0;
 
-  const nextEvent = useMemo(() => {
-    return [...events].sort(
-      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-    )[0];
+      return donations < 30_000;
+    });
+  }, [activeMembers, memberWeeklyTotals]);
+
+  const activeTrainAssignments = useMemo(() => {
+    return trainAssignments
+      .filter((assignment) => assignment.status !== BoardItemStatus.Completed)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [trainAssignments]);
+
+  const activeEvents = useMemo(() => {
+    return events
+      .filter((event) => event.status !== BoardItemStatus.Completed)
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date));
   }, [events]);
 
-  const totalPower = members.reduce((sum, member) => sum + member.power, 0);
+  const nextEvent = useMemo(() => {
+    return (
+      activeEvents.find((event) => event.date >= today) ??
+      activeEvents[0] ??
+      null
+    );
+  }, [activeEvents, today]);
+
+  const topMembers = useMemo(() => {
+    return activeMembers
+      .slice()
+      .sort((a, b) => Number(b.power ?? 0) - Number(a.power ?? 0))
+      .slice(0, 3);
+  }, [activeMembers]);
 
   return (
     <RequireActiveAlliance>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-      >
-        <View>
-          <Text style={styles.title}>Alliance Ops</Text>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>Alliance Dashboard</Text>
+          <Text style={styles.title}>
+            {activeAlliance?.name ?? "Alliance Ops"}
+          </Text>
           <Text style={styles.subtitle}>
-            Roster, train, and event management for strategy game alliances.
+            Roster, stats, train, and event management for your alliance.
           </Text>
         </View>
 
-        {loading ? (
-          <View style={styles.loadingPanel}>
-            <ActivityIndicator />
-            <Text style={styles.emptyText}>Loading dashboard...</Text>
-          </View>
-        ) : null}
-
-        {errorMessage ? (
-          <View style={styles.panel}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.grid}>
-          <StatCard label="Members" value={members.length} />
+        <View style={styles.statsGrid}>
+          <StatCard label="Members" value={activeMembers.length} />
           <StatCard
             label="Total Power"
             value={formatCompactNumber(totalPower)}
           />
+          <StatCard
+            label="Today's Donations"
+            value={formatCompactNumber(todaysDonations)}
+            helper={`${formatCompactNumber(weeklyDonations)} this week`}
+          />
+          <StatCard
+            label="Today's VS"
+            value={formatCompactNumber(todaysVersusPoints)}
+            helper={`${formatCompactNumber(weeklyVersusPoints)} this week`}
+          />
         </View>
 
-        <View style={styles.grid}>
+        <View style={styles.statsGrid}>
           <StatCard
             label="Top VS"
-            value={topVsMember?.username ?? topVsMember?.name ?? "—"}
+            value={topVsMember?.name ?? "—"}
             helper={
               topVsMember
-                ? formatCompactNumber(topVsMember.weeklyVsScore)
+                ? `${formatCompactNumber(topVsTotal)} this week`
                 : "No VS data yet"
             }
           />
+
           <StatCard
             label="Low Donations"
             value={lowDonationMembers.length}
             helper="Under 30k this week"
           />
+
+          <StatCard
+            label="Active Trains"
+            value={activeTrainAssignments.length}
+          />
+
+          <StatCard label="Active Events" value={activeEvents.length} />
         </View>
 
         <View style={styles.section}>
@@ -172,36 +252,108 @@ export function DashboardScreen() {
 
           {nextEvent ? (
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>{nextEvent.title}</Text>
-              <Text style={styles.panelText}>{nextEvent.type}</Text>
+              <Text style={styles.panelTitle}>{nextEvent.name}</Text>
               <Text style={styles.panelText}>
-                Starts {formatDateTime(nextEvent.startsAt)}
+                {nextEvent.type} · {nextEvent.date}
               </Text>
+              {nextEvent.notes ? (
+                <Text style={styles.panelText}>{nextEvent.notes}</Text>
+              ) : null}
             </View>
           ) : (
-            <Text style={styles.emptyText}>No upcoming events yet.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No upcoming events</Text>
+              <Text style={styles.emptyText}>
+                Add an event from the Events tab to see it here.
+              </Text>
+            </View>
           )}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Train Snapshot</Text>
 
-          {trains.length > 0 ? (
-            trains.map((train) => (
-              <View key={train.id} style={styles.panel}>
-                <Text style={styles.panelTitle}>{train.trainName}</Text>
+          {activeTrainAssignments.length > 0 ? (
+            activeTrainAssignments.slice(0, 3).map((assignment) => (
+              <View key={assignment.id} style={styles.panel}>
+                <Text style={styles.panelTitle}>{assignment.trainName}</Text>
+                <Text style={styles.panelText}>{assignment.date}</Text>
                 <Text style={styles.panelText}>
-                  Departure: {formatDateTime(train.departureTime)}
-                </Text>
-                <Text style={styles.panelText}>
-                  Assigned: {train.guardIds.length + train.passengerIds.length}
+                  Assigned:{" "}
+                  {
+                    [
+                      assignment.conductorMemberId,
+                      assignment.passengerMemberId,
+                    ].filter(Boolean).length
+                  }
                 </Text>
               </View>
             ))
           ) : (
-            <Text style={styles.emptyText}>No train assignments yet.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No active train assignments</Text>
+              <Text style={styles.emptyText}>
+                Add train assignments from the Trains tab to see them here.
+              </Text>
+            </View>
           )}
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Top Members</Text>
+
+          {topMembers.length > 0 ? (
+            topMembers.map((member, index) => (
+              <View key={member.id} style={styles.memberRow}>
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankText}>{index + 1}</Text>
+                </View>
+
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberName}>{member.name}</Text>
+                  <Text style={styles.memberMeta}>
+                    {formatRole(member.role)} · Level {member.level ?? "—"}
+                  </Text>
+                </View>
+
+                <Text style={styles.memberPower}>
+                  {formatCompactNumber(Number(member.power ?? 0))}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No members yet</Text>
+              <Text style={styles.emptyText}>
+                Add members to start tracking alliance stats.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {lowDonationMembers.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Donation Watch</Text>
+
+            {lowDonationMembers.slice(0, 5).map((member) => {
+              const donations =
+                memberWeeklyTotals.get(member.id)?.donations ?? 0;
+
+              return (
+                <View key={member.id} style={styles.memberRow}>
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    <Text style={styles.memberMeta}>
+                      {formatNumber(donations)} donations this week
+                    </Text>
+                  </View>
+
+                  <Text style={styles.warningText}>Under 30k</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </ScrollView>
     </RequireActiveAlliance>
   );
@@ -209,65 +361,156 @@ export function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 40,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: 20,
-    gap: 18,
+  header: {
+    marginBottom: 20,
+  },
+  eyebrow: {
+    color: primaryColor,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   title: {
     color: colors.text,
     fontSize: 32,
     fontWeight: "900",
+    marginBottom: 8,
   },
   subtitle: {
-    color: colors.muted,
-    marginTop: 6,
-    lineHeight: 20,
+    color: mutedColor,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  loadingPanel: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 8,
-    alignItems: "center",
-  },
-  grid: {
+  statsGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
+    marginBottom: 18,
+  },
+  statCard: {
+    width: "48%",
+    minHeight: 104,
+    borderRadius: 20,
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
+    padding: 16,
+    justifyContent: "space-between",
+  },
+  statLabel: {
+    color: mutedColor,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  statHelper: {
+    color: mutedColor,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
   },
   section: {
-    gap: 10,
+    marginBottom: 24,
   },
   sectionTitle: {
     color: colors.text,
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
+    marginBottom: 12,
   },
   panel: {
-    backgroundColor: colors.surface,
     borderRadius: 18,
+    backgroundColor: surfaceColor,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor,
     padding: 16,
-    gap: 4,
+    marginBottom: 10,
   },
   panelTitle: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 4,
   },
   panelText: {
-    color: colors.muted,
+    color: mutedColor,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
+    padding: 14,
+    marginBottom: 10,
+  },
+  rankBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: primaryColor,
+    marginRight: 12,
+  },
+  rankText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 2,
+  },
+  memberMeta: {
+    color: mutedColor,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  memberPower: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  warningText: {
+    color: "#b91c1c",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  emptyCard: {
+    borderRadius: 18,
+    backgroundColor: surfaceColor,
+    borderWidth: 1,
+    borderColor,
+    padding: 18,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 6,
   },
   emptyText: {
-    color: colors.muted,
-  },
-  errorText: {
-    color: "#DC2626",
-    fontWeight: "700",
+    color: mutedColor,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

@@ -1,8 +1,6 @@
-import { Stack } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,67 +9,45 @@ import {
   View,
 } from "react-native";
 
-import { AppButton } from "../../components/AppButton";
-import { useAllianceStore } from "../../store/allianceStore";
-import { colors } from "../../theme/colors";
-import type {
-  AllianceEvent,
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import {
   AllianceEventType,
-  AllianceMember,
-} from "../../types/alliance";
+  BoardItemStatus,
+  useAllianceStore,
+} from "@/store/allianceStore";
+import { colors } from "@/theme/colors";
 
-const eventTypes: AllianceEventType[] = [
-  "VS",
-  "Desert Storm",
-  "Capital War",
-  "Rare Soil",
-  "Train",
-  "Custom",
+const EVENT_TYPES = [
+  AllianceEventType.VS,
+  AllianceEventType.DesertStorm,
+  AllianceEventType.CapitalWar,
+  AllianceEventType.RareSoil,
+  AllianceEventType.Train,
+  AllianceEventType.Custom,
 ];
 
-function getTodayDateKey() {
+function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getMemberNames(
-  members: AllianceMember[] = [],
-  memberIds: string[] = [],
+function getAssignedMemberNames(
+  members: Array<{ id: string; name: string }>,
+  assignedMemberIds?: string[],
 ) {
-  if (memberIds.length === 0) {
+  const safeAssignedMemberIds = assignedMemberIds ?? [];
+
+  if (safeAssignedMemberIds.length === 0) {
     return "None assigned";
   }
 
-  const names = memberIds
-    .map((memberId) => {
-      return members.find((member) => member.id === memberId)?.username;
-    })
-    .filter(Boolean)
-    .join(", ");
+  const names = safeAssignedMemberIds
+    .map((memberId) => members.find((member) => member.id === memberId)?.name)
+    .filter(Boolean);
 
-  return names || "None assigned";
+  return names.length > 0 ? names.join(", ") : "None assigned";
 }
 
-type EventFormState = {
-  id?: string;
-  name: string;
-  type: AllianceEventType;
-  date: string;
-  notes: string;
-};
-
-const emptyForm: EventFormState = {
-  name: "",
-  type: "VS",
-  date: getTodayDateKey(),
-  notes: "",
-};
-
 export function EventBoardScreen() {
-  const [eventForm, setEventForm] = useState<EventFormState | null>(null);
-  const [memberPickerEventId, setMemberPickerEventId] = useState<string | null>(
-    null,
-  );
-
   const members = useAllianceStore((state) => state.members ?? []);
   const events = useAllianceStore((state) => state.events ?? []);
 
@@ -89,18 +65,37 @@ export function EventBoardScreen() {
     (state) => state.deleteAllianceEvent,
   );
 
+  const [name, setName] = useState("");
+  const [type, setType] = useState<AllianceEventType>(AllianceEventType.VS);
+  const [date, setDate] = useState(todayString());
+  const [notes, setNotes] = useState("");
+  const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
+
+  const activeMembers = useMemo(() => {
+    return members
+      .filter((member) => member.isActive !== false)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [members]);
+
   const activeEvents = useMemo(() => {
     return events
-      .filter((event) => event.status !== "completed")
+      .filter((event) => event.status !== BoardItemStatus.Completed)
       .slice()
       .sort((a, b) => {
-        return (a.date ?? "").localeCompare(b.date ?? "");
+        const dateCompare = b.date.localeCompare(a.date);
+
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
+
+        return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
       });
   }, [events]);
 
   const completedEvents = useMemo(() => {
     return events
-      .filter((event) => event.status === "completed")
+      .filter((event) => event.status === BoardItemStatus.Completed)
       .slice()
       .sort((a, b) => {
         const aDate = a.completedAt ?? a.date ?? "";
@@ -110,86 +105,56 @@ export function EventBoardScreen() {
       });
   }, [events]);
 
-  const selectedPickerEvent = useMemo(() => {
-    if (!memberPickerEventId) {
-      return undefined;
-    }
-
-    return events.find((event) => event.id === memberPickerEventId);
-  }, [events, memberPickerEventId]);
-
-  function showMissingEventStoreAction() {
-    Alert.alert(
-      "Events are not connected",
-      "The event board loaded, but the event actions are missing from allianceStore.ts.",
-    );
+  function resetForm() {
+    setName("");
+    setType(AllianceEventType.VS);
+    setDate(todayString());
+    setNotes("");
+    setAssignedMemberIds([]);
   }
 
-  function openCreateEvent() {
-    setEventForm({
-      ...emptyForm,
-      date: getTodayDateKey(),
+  function toggleAssignedMember(memberId: string) {
+    setAssignedMemberIds((currentIds) => {
+      if (currentIds.includes(memberId)) {
+        return currentIds.filter((currentId) => currentId !== memberId);
+      }
+
+      return [...currentIds, memberId];
     });
   }
 
-  function openEditEvent(event: AllianceEvent) {
-    setEventForm({
-      id: event.id,
-      name: event.name,
-      type: event.type,
-      date: event.date,
-      notes: event.notes ?? "",
-    });
-  }
-
-  function saveEventForm() {
-    if (!eventForm) {
-      return;
-    }
-
-    const trimmedName = eventForm.name.trim();
+  function handleAddEvent() {
+    const trimmedName = name.trim();
 
     if (!trimmedName) {
-      Alert.alert("Missing event name", "Please enter a name for this event.");
+      Alert.alert("Event name required", "Enter a name for the event.");
       return;
     }
 
-    const date = eventForm.date.trim() || getTodayDateKey();
-    const notes = eventForm.notes.trim();
+    addAllianceEvent({
+      name: trimmedName,
+      type,
+      date: date.trim() || todayString(),
+      notes: notes.trim(),
+      assignedMemberIds,
+      status: BoardItemStatus.Active,
+      completedAt: null,
+      updatedAt: new Date().toISOString(),
+    });
 
-    if (eventForm.id) {
-      if (typeof updateAllianceEvent !== "function") {
-        showMissingEventStoreAction();
-        return;
-      }
-
-      updateAllianceEvent(eventForm.id, {
-        name: trimmedName,
-        type: eventForm.type,
-        date,
-        notes,
-      });
-    } else {
-      if (typeof addAllianceEvent !== "function") {
-        showMissingEventStoreAction();
-        return;
-      }
-
-      addAllianceEvent({
-        name: trimmedName,
-        type: eventForm.type,
-        date,
-        notes,
-      });
-    }
-
-    setEventForm(null);
+    resetForm();
   }
 
-  function confirmCompleteEvent(event: AllianceEvent) {
+  function clearAssignedMembersForEvent(eventId: string) {
+    updateAllianceEvent(eventId, {
+      assignedMemberIds: [],
+    });
+  }
+
+  function confirmCompleteEvent(eventId: string) {
     Alert.alert(
       "Complete event?",
-      "This will move the event to past event history.",
+      "This will move the event to completed history.",
       [
         {
           text: "Cancel",
@@ -197,21 +162,14 @@ export function EventBoardScreen() {
         },
         {
           text: "Complete",
-          onPress: () => {
-            if (typeof completeAllianceEvent !== "function") {
-              showMissingEventStoreAction();
-              return;
-            }
-
-            completeAllianceEvent(event.id);
-          },
+          onPress: () => completeAllianceEvent(eventId),
         },
       ],
     );
   }
 
-  function confirmDeleteEvent(event: AllianceEvent) {
-    Alert.alert("Delete event?", "This will permanently delete this event.", [
+  function confirmDeleteEvent(eventId: string) {
+    Alert.alert("Delete event?", "This will permanently remove this event.", [
       {
         text: "Cancel",
         style: "cancel",
@@ -219,646 +177,543 @@ export function EventBoardScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          if (typeof deleteAllianceEvent !== "function") {
-            showMissingEventStoreAction();
-            return;
-          }
-
-          deleteAllianceEvent(event.id);
-        },
+        onPress: () => deleteAllianceEvent(eventId),
       },
     ]);
   }
 
-  function reopenEvent(eventId: string) {
-    if (typeof reopenAllianceEvent !== "function") {
-      showMissingEventStoreAction();
-      return;
-    }
-
-    reopenAllianceEvent(eventId);
-  }
-
-  function toggleAssignedMember(memberId: string) {
-    if (!selectedPickerEvent) {
-      return;
-    }
-
-    if (typeof updateAllianceEvent !== "function") {
-      showMissingEventStoreAction();
-      return;
-    }
-
-    const assignedMemberIds = selectedPickerEvent.assignedMemberIds ?? [];
-    const isAssigned = assignedMemberIds.includes(memberId);
-
-    updateAllianceEvent(selectedPickerEvent.id, {
-      assignedMemberIds: isAssigned
-        ? assignedMemberIds.filter((id) => id !== memberId)
-        : [...assignedMemberIds, memberId],
-    });
-  }
-
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Events",
-        }}
-      />
+    <RequireActiveAlliance>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>Alliance Events</Text>
+          <Text style={styles.title}>Event Board</Text>
+          <Text style={styles.subtitle}>
+            Track active alliance events, assign members, and keep a completed
+            event history.
+          </Text>
+        </View>
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-      >
-        <View style={styles.headerCard}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Alliance Events</Text>
-            <Text style={styles.subtitle}>
-              Create event boards, assign members, and keep a history of past
-              alliance events.
-            </Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>New Event</Text>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Event Name</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Alliance Duel Push, Desert Storm, Capital War..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={styles.input}
+            />
           </View>
 
-          <AppButton title="Add Event" onPress={openCreateEvent} />
-        </View>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Event Type</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Events</Text>
+            <View style={styles.typeGrid}>
+              {EVENT_TYPES.map((eventType) => {
+                const selected = type === eventType;
 
-          {activeEvents.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                No active events yet. Add one to start assigning members.
-              </Text>
+                return (
+                  <Pressable
+                    key={eventType}
+                    style={[styles.typeChip, selected && styles.typeChipActive]}
+                    onPress={() => setType(eventType)}
+                  >
+                    <Text
+                      style={[
+                        styles.typeChipText,
+                        selected && styles.typeChipTextActive,
+                      ]}
+                    >
+                      {eventType}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          ) : (
-            activeEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                members={members}
-                onEdit={() => openEditEvent(event)}
-                onAssignMembers={() => setMemberPickerEventId(event.id)}
-                onComplete={() => confirmCompleteEvent(event)}
-                onDelete={() => confirmDeleteEvent(event)}
-              />
-            ))
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Past Events</Text>
-
-          {completedEvents.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                Completed events will appear here.
-              </Text>
-            </View>
-          ) : (
-            completedEvents.map((event) => (
-              <HistoryEventCard
-                key={event.id}
-                event={event}
-                members={members}
-                onReopen={() => reopenEvent(event.id)}
-                onDelete={() => confirmDeleteEvent(event)}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={!!eventForm}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setEventForm(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {eventForm?.id ? "Edit Event" : "Add Event"}
-              </Text>
-
-              <Pressable
-                onPress={() => setEventForm(null)}
-                hitSlop={10}
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                <Text style={styles.modalClose}>Cancel</Text>
-              </Pressable>
-            </View>
-
-            {eventForm && (
-              <>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Event Name</Text>
-                  <TextInput
-                    value={eventForm.name}
-                    onChangeText={(name) =>
-                      setEventForm((current) =>
-                        current ? { ...current, name } : current,
-                      )
-                    }
-                    placeholder="Alliance Duel, Desert Storm, Capital War..."
-                    placeholderTextColor={colors.muted}
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Event Type</Text>
-
-                  <View style={styles.typeGrid}>
-                    {eventTypes.map((type) => {
-                      const selected = eventForm.type === type;
-
-                      return (
-                        <Pressable
-                          key={type}
-                          onPress={() =>
-                            setEventForm((current) =>
-                              current ? { ...current, type } : current,
-                            )
-                          }
-                          style={({ pressed }) => [
-                            styles.typePill,
-                            selected && styles.typePillSelected,
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.typePillText,
-                              selected && styles.typePillTextSelected,
-                            ]}
-                          >
-                            {type}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Date</Text>
-                  <TextInput
-                    value={eventForm.date}
-                    onChangeText={(date) =>
-                      setEventForm((current) =>
-                        current ? { ...current, date } : current,
-                      )
-                    }
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.muted}
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Notes</Text>
-                  <TextInput
-                    value={eventForm.notes}
-                    onChangeText={(notes) =>
-                      setEventForm((current) =>
-                        current ? { ...current, notes } : current,
-                      )
-                    }
-                    placeholder="Optional notes..."
-                    placeholderTextColor={colors.muted}
-                    multiline
-                    style={[styles.input, styles.notesInput]}
-                  />
-                </View>
-
-                <AppButton title="Save Event" onPress={saveEventForm} />
-              </>
-            )}
           </View>
-        </View>
-      </Modal>
 
-      <Modal
-        visible={!!memberPickerEventId}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMemberPickerEventId(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign Members</Text>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Date</Text>
+            <TextInput
+              value={date}
+              onChangeText={setDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+          </View>
 
-              <Pressable
-                onPress={() => setMemberPickerEventId(null)}
-                hitSlop={10}
-                style={({ pressed }) => pressed && styles.pressed}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Assigned Members</Text>
+
+            {activeMembers.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.memberPicker}
               >
-                <Text style={styles.modalClose}>Done</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.memberList}>
-              {members.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>
-                    No members available yet.
-                  </Text>
-                </View>
-              ) : (
-                members.map((member) => {
-                  const assignedMemberIds =
-                    selectedPickerEvent?.assignedMemberIds ?? [];
-
+                {activeMembers.map((member) => {
                   const selected = assignedMemberIds.includes(member.id);
 
                   return (
                     <Pressable
                       key={member.id}
-                      onPress={() => toggleAssignedMember(member.id)}
-                      style={({ pressed }) => [
-                        styles.memberRow,
-                        selected && styles.memberRowSelected,
-                        pressed && styles.pressed,
+                      style={[
+                        styles.memberChip,
+                        selected && styles.memberChipActive,
                       ]}
+                      onPress={() => toggleAssignedMember(member.id)}
                     >
-                      <View>
-                        <Text style={styles.memberName}>{member.username}</Text>
-                        <Text style={styles.memberMeta}>
-                          {member.rank} · HQ {member.hqLevel}
-                        </Text>
-                      </View>
-
-                      <Text style={styles.checkmark}>
-                        {selected ? "✓" : ""}
+                      <Text
+                        style={[
+                          styles.memberChipText,
+                          selected && styles.memberChipTextActive,
+                        ]}
+                      >
+                        {member.name}
                       </Text>
                     </Pressable>
                   );
-                })
-              )}
-            </ScrollView>
+                })}
+              </ScrollView>
+            ) : (
+              <Text style={styles.emptyText}>
+                Add members before assigning them to events.
+              </Text>
+            )}
           </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Optional notes"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              multiline
+              style={[styles.input, styles.notesInput]}
+            />
+          </View>
+
+          <Pressable style={styles.primaryButton} onPress={handleAddEvent}>
+            <Text style={styles.primaryButtonText}>Add Event</Text>
+          </Pressable>
         </View>
-      </Modal>
-    </>
-  );
-}
 
-function EventCard({
-  event,
-  members,
-  onEdit,
-  onAssignMembers,
-  onComplete,
-  onDelete,
-}: {
-  event: AllianceEvent;
-  members: AllianceMember[];
-  onEdit: () => void;
-  onAssignMembers: () => void;
-  onComplete: () => void;
-  onDelete: () => void;
-}) {
-  const assignedMemberIds = event.assignedMemberIds ?? [];
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Active Events</Text>
 
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{event.name}</Text>
-        <Text style={styles.cardMeta}>
-          {event.type} · {event.date}
-        </Text>
-      </View>
+          {activeEvents.length > 0 ? (
+            activeEvents.map((event) => (
+              <View key={event.id} style={styles.eventCard}>
+                <View style={styles.eventHeader}>
+                  <View style={styles.eventHeaderText}>
+                    <Text style={styles.eventTitle}>{event.name}</Text>
+                    <Text style={styles.eventMeta}>
+                      {event.type} · {event.date}
+                    </Text>
+                  </View>
 
-      <View style={styles.assignmentBox}>
-        <Text style={styles.assignmentLabel}>Assigned Members</Text>
-        <Text style={styles.assignmentValue}>
-          {getMemberNames(members, assignedMemberIds)}
-        </Text>
-      </View>
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusBadgeText}>Active</Text>
+                  </View>
+                </View>
 
-      {!!event.notes?.trim() && (
-        <Text style={styles.notesText}>{event.notes.trim()}</Text>
-      )}
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Assigned Members</Text>
+                  <Text style={styles.eventValue}>
+                    {getAssignedMemberNames(members, event.assignedMemberIds)}
+                  </Text>
+                </View>
 
-      <View style={styles.actionsRow}>
-        <SmallButton title="Members" onPress={onAssignMembers} />
-        <SmallButton title="Edit" onPress={onEdit} />
-      </View>
+                {event.notes ? (
+                  <Text style={styles.eventNotes}>{event.notes}</Text>
+                ) : null}
 
-      <View style={styles.actionsRow}>
-        <SmallButton title="Complete" variant="primary" onPress={onComplete} />
-        <SmallButton title="Delete" variant="danger" onPress={onDelete} />
-      </View>
-    </View>
-  );
-}
+                <View style={styles.actionRow}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => clearAssignedMembersForEvent(event.id)}
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      Clear Members
+                    </Text>
+                  </Pressable>
 
-function HistoryEventCard({
-  event,
-  members,
-  onReopen,
-  onDelete,
-}: {
-  event: AllianceEvent;
-  members: AllianceMember[];
-  onReopen: () => void;
-  onDelete: () => void;
-}) {
-  const assignedMemberIds = event.assignedMemberIds ?? [];
+                  <Pressable
+                    style={styles.completeButton}
+                    onPress={() => confirmCompleteEvent(event.id)}
+                  >
+                    <Text style={styles.completeButtonText}>Complete</Text>
+                  </Pressable>
 
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{event.name}</Text>
-        <Text style={styles.cardMeta}>
-          Completed {event.completedAt ?? event.date} · {event.type}
-        </Text>
-      </View>
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => confirmDeleteEvent(event.id)}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No active events</Text>
+              <Text style={styles.emptyText}>
+                Add an event above to start building your alliance event board.
+              </Text>
+            </View>
+          )}
+        </View>
 
-      <Text style={styles.historyText}>
-        Assigned: {getMemberNames(members, assignedMemberIds)}
-      </Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>History</Text>
 
-      {!!event.notes?.trim() && (
-        <Text style={styles.notesText}>{event.notes.trim()}</Text>
-      )}
+          {completedEvents.length > 0 ? (
+            completedEvents.map((event) => (
+              <View key={event.id} style={styles.eventCard}>
+                <View style={styles.eventHeader}>
+                  <View style={styles.eventHeaderText}>
+                    <Text style={styles.eventTitle}>{event.name}</Text>
+                    <Text style={styles.eventMeta}>
+                      {event.type} · {event.date}
+                    </Text>
+                  </View>
 
-      <View style={styles.actionsRow}>
-        <SmallButton title="Reopen" onPress={onReopen} />
-        <SmallButton title="Delete" variant="danger" onPress={onDelete} />
-      </View>
-    </View>
-  );
-}
+                  <View style={styles.completedBadge}>
+                    <Text style={styles.completedBadgeText}>Completed</Text>
+                  </View>
+                </View>
 
-function SmallButton({
-  title,
-  variant = "default",
-  onPress,
-}: {
-  title: string;
-  variant?: "default" | "primary" | "danger";
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.smallButton,
-        variant === "primary" && styles.primaryButton,
-        variant === "danger" && styles.dangerButton,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text
-        style={[
-          styles.smallButtonText,
-          variant === "primary" && styles.primaryButtonText,
-          variant === "danger" && styles.dangerButtonText,
-        ]}
-      >
-        {title}
-      </Text>
-    </Pressable>
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Assigned Members</Text>
+                  <Text style={styles.eventValue}>
+                    {getAssignedMemberNames(members, event.assignedMemberIds)}
+                  </Text>
+                </View>
+
+                {event.notes ? (
+                  <Text style={styles.eventNotes}>{event.notes}</Text>
+                ) : null}
+
+                <View style={styles.actionRow}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => reopenAllianceEvent(event.id)}
+                  >
+                    <Text style={styles.secondaryButtonText}>Reopen</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => confirmDeleteEvent(event.id)}
+                  >
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No event history yet</Text>
+              <Text style={styles.emptyText}>
+                Completed events will appear here.
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </RequireActiveAlliance>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 40,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: 16,
-    gap: 18,
+  header: {
+    marginBottom: 20,
   },
-  headerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 16,
-  },
-  headerText: {
-    gap: 6,
+  eyebrow: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   title: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: "900",
+    marginBottom: 8,
   },
   subtitle: {
-    color: colors.muted,
-    lineHeight: 20,
-  },
-  section: {
-    gap: 10,
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  emptyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-  },
-  emptyText: {
-    color: colors.muted,
-    lineHeight: 20,
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 14,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    padding: 18,
+    marginBottom: 24,
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 2,
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  cardMeta: {
-    color: colors.muted,
-    marginTop: 2,
-  },
-  assignmentBox: {
-    backgroundColor: colors.background,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    gap: 4,
-  },
-  assignmentLabel: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  assignmentValue: {
-    color: colors.text,
-    fontWeight: "800",
-    lineHeight: 20,
-  },
-  notesText: {
-    color: colors.muted,
-    lineHeight: 20,
-  },
-  historyText: {
-    color: colors.muted,
-    lineHeight: 20,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  smallButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  smallButtonText: {
-    color: colors.text,
-    fontWeight: "900",
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  primaryButtonText: {
-    color: "#fff",
-  },
-  dangerButton: {
-    backgroundColor: "#fee2e2",
-    borderColor: "#fecaca",
-  },
-  dangerButtonText: {
-    color: "#b91c1c",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    maxHeight: "86%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 16,
-    gap: 14,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  modalTitle: {
-    color: colors.text,
     fontSize: 20,
     fontWeight: "900",
+    marginBottom: 16,
   },
-  modalClose: {
-    color: colors.primary,
-    fontWeight: "900",
-    fontSize: 16,
-  },
-  field: {
-    gap: 6,
+  fieldGroup: {
+    marginBottom: 16,
   },
   label: {
-    color: colors.muted,
-    fontSize: 13,
+    color: colors.text,
+    fontSize: 14,
     fontWeight: "800",
+    marginBottom: 8,
   },
   input: {
-    minHeight: 46,
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    color: colors.text,
-    paddingHorizontal: 12,
-    fontWeight: "700",
+    borderColor: "#d8d8d8",
+    backgroundColor: "#ffffff",
+    color: "#111111",
+    paddingHorizontal: 14,
+    fontSize: 16,
   },
   notesInput: {
-    minHeight: 90,
+    minHeight: 86,
     paddingTop: 12,
     textAlignVertical: "top",
   },
   typeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
   },
-  typePill: {
+  typeChip: {
+    minHeight: 38,
+    justifyContent: "center",
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderColor: "#d8d8d8",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginBottom: 8,
   },
-  typePillSelected: {
-    backgroundColor: colors.primary,
+  typeChipActive: {
     borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
-  typePillText: {
+  typeChipText: {
     color: colors.text,
+    fontSize: 14,
     fontWeight: "800",
   },
-  typePillTextSelected: {
-    color: "#fff",
+  typeChipTextActive: {
+    color: "#ffffff",
   },
-  memberList: {
-    gap: 10,
-    paddingBottom: 24,
+  memberPicker: {
+    paddingRight: 20,
   },
-  memberRow: {
-    backgroundColor: colors.background,
-    borderRadius: 14,
+  memberChip: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    borderColor: "#d8d8d8",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    marginRight: 8,
   },
-  memberRowSelected: {
+  memberChipActive: {
     borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
-  memberName: {
+  memberChipText: {
     color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  memberChipTextActive: {
+    color: "#ffffff",
+  },
+  primaryButton: {
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    marginTop: 4,
+  },
+  primaryButtonText: {
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "900",
   },
-  memberMeta: {
-    color: colors.muted,
-    marginTop: 2,
+  section: {
+    marginBottom: 26,
   },
-  checkmark: {
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 21,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+  eventCard: {
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    padding: 16,
+    marginBottom: 12,
+  },
+  eventHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  eventHeaderText: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  eventTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  eventMeta: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  statusBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(79, 70, 229, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statusBadgeText: {
     color: colors.primary,
-    fontSize: 22,
+    fontSize: 12,
     fontWeight: "900",
   },
-  pressed: {
-    opacity: 0.65,
+  completedBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(34, 197, 94, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  completedBadgeText: {
+    color: "#15803d",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  eventRow: {
+    marginBottom: 10,
+  },
+  eventLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 2,
+    textTransform: "uppercase",
+  },
+  eventValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 21,
+  },
+  eventNotes: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 6,
+  },
+  secondaryButton: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d8d8d8",
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginTop: 8,
+  },
+  secondaryButtonText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  completeButton: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    marginRight: 8,
+    marginTop: 8,
+  },
+  completeButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deleteButton: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "#fee2e2",
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  deleteButtonText: {
+    color: "#b91c1c",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  emptyCard: {
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    padding: 18,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
