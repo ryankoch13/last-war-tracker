@@ -19,8 +19,32 @@ import { colors } from "@/theme/colors";
 
 type AuthMode = "login" | "signup";
 
+const themeColors = colors as typeof colors & {
+  primary?: string;
+  accent?: string;
+};
+
+const actionColor = themeColors.primary ?? themeColors.accent ?? "#7c3aed";
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
 export default function LoginScreen() {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -30,23 +54,21 @@ export default function LoginScreen() {
     (state) => state.loadActiveAlliance,
   );
 
-  const isLogin = mode === "login";
+  const isLogin = authMode === "login";
 
-  async function handleSubmit() {
+  async function onSubmit() {
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPassword = password.trim();
 
     if (!trimmedEmail) {
-      Alert.alert("Email required", "Enter your email address.");
+      Alert.alert("Missing Email", "Please enter your email address.");
       return;
     }
 
     if (!trimmedPassword) {
-      Alert.alert("Password required", "Enter your password.");
+      Alert.alert("Missing Password", "Please enter your password.");
       return;
     }
-
-    setLoading(true);
 
     try {
       setLoading(true);
@@ -60,78 +82,82 @@ export default function LoginScreen() {
         if (error) {
           throw error;
         }
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password: trimmedPassword,
-        });
 
-        if (error) {
-          throw error;
-        }
+        await loadActiveAlliance();
+        router.replace("/(tabs)");
+        return;
       }
 
-      await loadActiveAlliance();
-
-      router.replace("/");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Something went wrong. Please try again.";
-
-      Alert.alert(isLogin ? "Login failed" : "Sign up failed", message);
-
-      setLoading(false);
-    }
-  }
-
-  async function handleForgotPassword() {
-    const trimmedEmail = email.trim().toLowerCase();
-
-    if (!trimmedEmail) {
-      Alert.alert(
-        "Email required",
-        "Enter your email address first, then tap Forgot password.",
-      );
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password: trimmedPassword,
+      });
 
       if (error) {
         throw error;
       }
 
-      Alert.alert(
-        "Password reset sent",
-        "Check your email for a password reset link.",
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not send password reset email.";
+      /*
+        When email confirmation is enabled in Supabase,
+        signup succeeds but no session is created yet.
 
-      Alert.alert("Password reset failed", message);
+        That means this is NOT an error.
+      */
+      if (data.user && !data.session) {
+        Alert.alert(
+          "Verify Your Email",
+          "We created your account. Please check your email and verify your address before signing in.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                setAuthMode("login");
+                setPassword("");
+              },
+            },
+          ],
+        );
+
+        return;
+      }
+
+      /*
+        This only runs if email confirmation is disabled
+        and Supabase signs the user in immediately.
+      */
+      await loadActiveAlliance();
+      router.replace("/(tabs)");
+    } catch (error) {
+      console.error("AUTH ERROR:", error);
+
+      Alert.alert(
+        isLogin ? "Problem Signing In" : "Problem Creating Account",
+        getErrorMessage(error),
+      );
     } finally {
       setLoading(false);
     }
   }
 
+  function switchMode(nextMode: AuthMode) {
+    if (loading) {
+      return;
+    }
+
+    setAuthMode(nextMode);
+    setPassword("");
+  }
+
   return (
     <KeyboardAvoidingView
-      style={styles.keyboardView}
+      style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.card}>
+        <View style={styles.header}>
           <Text style={styles.title}>
             {isLogin ? "Welcome Back" : "Create Account"}
           </Text>
@@ -139,75 +165,99 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>
             {isLogin
               ? "Sign in to manage your alliance."
-              : "Create an account to start or join an alliance."}
+              : "Create an account to start tracking your alliance."}
           </Text>
+        </View>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              secureTextEntry
-              textContentType={isLogin ? "password" : "newPassword"}
-              autoComplete={isLogin ? "password" : "new-password"}
-              keyboardType="default"
-              style={styles.input}
-            />
-          </View>
+        <View style={styles.modeRow}>
+          <Pressable
+            style={[styles.modeButton, isLogin && styles.modeButtonActive]}
+            onPress={() => switchMode("login")}
+            disabled={loading}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                isLogin && styles.modeButtonTextActive,
+              ]}
+            >
+              Login
+            </Text>
+          </Pressable>
 
           <Pressable
-            style={[styles.primaryButton, loading && styles.disabledButton]}
-            onPress={handleSubmit}
+            style={[styles.modeButton, !isLogin && styles.modeButtonActive]}
+            onPress={() => switchMode("signup")}
+            disabled={loading}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                !isLogin && styles.modeButtonTextActive,
+              ]}
+            >
+              Sign Up
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+            keyboardType="email-address"
+            editable={!loading}
+            style={styles.input}
+          />
+
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete={isLogin ? "password" : "new-password"}
+            textContentType={isLogin ? "password" : "newPassword"}
+            secureTextEntry
+            editable={!loading}
+            style={styles.input}
+          />
+
+          <Pressable
+            style={[
+              styles.submitButton,
+              loading && styles.submitButtonDisabled,
+            ]}
+            onPress={onSubmit}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.background} />
             ) : (
-              <Text style={styles.primaryButtonText}>
-                {isLogin ? "Log In" : "Sign Up"}
+              <Text style={styles.submitButtonText}>
+                {isLogin ? "Sign In" : "Create Account"}
               </Text>
             )}
           </Pressable>
 
-          {isLogin ? (
-            <Pressable
-              style={styles.textButton}
-              onPress={handleForgotPassword}
-              disabled={loading}
-            >
-              <Text style={styles.textButtonText}>Forgot password?</Text>
-            </Pressable>
-          ) : null}
-
           <Pressable
-            style={styles.modeButton}
-            onPress={() => setMode(isLogin ? "signup" : "login")}
+            style={styles.secondaryButton}
+            onPress={() => switchMode(isLogin ? "signup" : "login")}
             disabled={loading}
           >
-            <Text style={styles.modeButtonText}>
+            <Text style={styles.secondaryButtonText}>
               {isLogin
                 ? "Need an account? Sign up"
-                : "Already have an account? Log in"}
+                : "Already have an account? Sign in"}
             </Text>
           </Pressable>
         </View>
@@ -217,91 +267,120 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  keyboardView: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+
+  content: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: 20,
+    padding: 24,
   },
-  card: {
-    borderRadius: 24,
-    backgroundColor: "#ffffff",
-    padding: 20,
-    shadowColor: "#000000",
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    elevation: 3,
+
+  header: {
+    marginBottom: 24,
   },
+
   title: {
     color: colors.text,
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: "800",
     marginBottom: 8,
   },
+
   subtitle: {
     color: colors.textMuted,
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 22,
-    marginBottom: 24,
   },
-  fieldGroup: {
+
+  modeRow: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 4,
     marginBottom: 16,
   },
+
+  modeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  modeButtonActive: {
+    backgroundColor: actionColor,
+  },
+
+  modeButtonText: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  modeButtonTextActive: {
+    color: colors.background,
+  },
+
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 18,
+  },
+
   label: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
     marginBottom: 8,
   },
+
   input: {
-    minHeight: 48,
-    borderRadius: 14,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: "#d8d8d8",
-    backgroundColor: "#ffffff",
-    color: "#111111",
-    paddingHorizontal: 14,
+    borderColor: colors.border,
+    borderRadius: 12,
+    color: colors.text,
     fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
   },
-  primaryButton: {
-    minHeight: 50,
-    borderRadius: 16,
+
+  submitButton: {
+    backgroundColor: actionColor,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
-    marginTop: 8,
+    minHeight: 50,
+    marginTop: 4,
   },
-  disabledButton: {
-    opacity: 0.7,
+
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
-  primaryButtonText: {
-    color: "#ffffff",
+
+  submitButtonText: {
+    color: colors.background,
     fontSize: 16,
     fontWeight: "800",
   },
-  textButton: {
+
+  secondaryButton: {
     alignItems: "center",
-    paddingVertical: 14,
+    paddingTop: 16,
   },
-  textButtonText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  modeButton: {
-    alignItems: "center",
-    paddingTop: 8,
-  },
-  modeButtonText: {
+
+  secondaryButtonText: {
     color: colors.textMuted,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
 });
