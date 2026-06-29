@@ -1,16 +1,8 @@
-import { Stack } from "expo-router";
-import { useMemo, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppButton } from "../../components/AppButton";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { router } from "expo-router";
+import { useState } from "react";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import type { AllianceMember, TrainAssignment } from "../../types/alliance";
@@ -176,301 +168,61 @@ export function TrainBoardScreen() {
   }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Trains",
-        }}
-      />
-
-      <ScrollView
+    <RequireActiveAlliance>
+      <Pressable
+        onPress={() => router.push("/trains/create")}
+        style={styles.createButton}
+      >
+        <Text style={styles.createButtonText}>+ Create Train</Text>
+      </Pressable>
+      <FlatList
         style={styles.container}
         contentContainerStyle={styles.content}
-      >
-        <View style={styles.headerCard}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Alliance Train Board</Text>
-            <Text style={styles.subtitle}>
-              Assign conductors, guards, and passengers. Completed trains are
-              saved to history.
+        data={trains}
+        keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            No trains yet. This will become your alliance train assignment
+            board.
+          </Text>
+        }
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <Text style={styles.title}>{item.trainName}</Text>
+            <Text style={styles.meta}>
+              Departure: {formatDateTime(item.departureTime)}
             </Text>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Conductor</Text>
+              <Text style={styles.value}>
+                {getMemberName(item.conductorId)}
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Guards</Text>
+              <Text style={styles.value}>
+                {item.guardIds.length
+                  ? item.guardIds.map(getMemberName).join(", ")
+                  : "None assigned"}
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Passengers</Text>
+              <Text style={styles.value}>
+                {item.passengerIds.length
+                  ? item.passengerIds.map(getMemberName).join(", ")
+                  : "None assigned"}
+              </Text>
+            </View>
+
+            {!!item.notes && <Text style={styles.notes}>{item.notes}</Text>}
           </View>
-
-          <AppButton title="Add Train" onPress={addTrainAssignment} />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Trains</Text>
-
-          {activeTrains.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                No active trains yet. Add one to start assigning members.
-              </Text>
-            </View>
-          ) : (
-            activeTrains.map((train) => (
-              <TrainCard
-                key={train.id}
-                train={train}
-                members={members}
-                onSetConductor={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "conductor",
-                  })
-                }
-                onEditGuards={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "guards",
-                  })
-                }
-                onEditPassengers={() =>
-                  setPickerState({
-                    trainId: train.id,
-                    mode: "passengers",
-                  })
-                }
-                onComplete={() => confirmCompleteTrain(train)}
-                onDelete={() => confirmDeleteTrain(train)}
-              />
-            ))
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Past Train Assignments</Text>
-
-          {completedTrains.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                Completed train assignments will appear here.
-              </Text>
-            </View>
-          ) : (
-            completedTrains.map((train) => (
-              <HistoryTrainCard
-                key={train.id}
-                train={train}
-                members={members}
-                onReopen={() => reopenTrainAssignment(train.id)}
-                onDelete={() => confirmDeleteTrain(train)}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={!!pickerState}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerState(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {pickerState ? getPickerTitle(pickerState.mode) : "Members"}
-              </Text>
-
-              <Pressable
-                onPress={() => setPickerState(null)}
-                hitSlop={10}
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                <Text style={styles.modalClose}>Done</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.memberList}>
-              {members.map((member) => {
-                const selected = isMemberSelected(member.id);
-
-                return (
-                  <Pressable
-                    key={member.id}
-                    onPress={() => toggleMember(member.id)}
-                    style={({ pressed }) => [
-                      styles.memberRow,
-                      selected && styles.memberRowSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View>
-                      <Text style={styles.memberName}>{member.username}</Text>
-                      <Text style={styles.memberMeta}>
-                        {member.rank} · HQ {member.hqLevel}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.checkmark}>{selected ? "✓" : ""}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
-
-function TrainCard({
-  train,
-  members,
-  onSetConductor,
-  onEditGuards,
-  onEditPassengers,
-  onComplete,
-  onDelete,
-}: {
-  train: TrainAssignment;
-  members: AllianceMember[];
-  onSetConductor: () => void;
-  onEditGuards: () => void;
-  onEditPassengers: () => void;
-  onComplete: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{train.name}</Text>
-        <Text style={styles.cardMeta}>Created {train.date}</Text>
-      </View>
-
-      <View style={styles.assignmentBlock}>
-        <AssignmentLine
-          label="Conductor"
-          value={getMemberName(members, train.conductorId)}
-          onPress={onSetConductor}
-        />
-
-        <AssignmentLine
-          label="Guards"
-          value={getMemberNames(members, train.guardIds)}
-          onPress={onEditGuards}
-        />
-
-        <AssignmentLine
-          label="Passengers"
-          value={getMemberNames(members, train.passengerIds)}
-          onPress={onEditPassengers}
-        />
-      </View>
-
-      <View style={styles.actionsRow}>
-        <Pressable
-          onPress={onComplete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.completeButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.completeButtonText}>Complete</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onDelete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.deleteButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function HistoryTrainCard({
-  train,
-  members,
-  onReopen,
-  onDelete,
-}: {
-  train: TrainAssignment;
-  members: AllianceMember[];
-  onReopen: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.cardTitle}>{train.name}</Text>
-        <Text style={styles.cardMeta}>
-          Completed {train.completedAt ?? train.date}
-        </Text>
-      </View>
-
-      <View style={styles.historyDetails}>
-        <Text style={styles.historyText}>
-          Conductor: {getMemberName(members, train.conductorId)}
-        </Text>
-        <Text style={styles.historyText}>
-          Guards: {getMemberNames(members, train.guardIds)}
-        </Text>
-        <Text style={styles.historyText}>
-          Passengers: {getMemberNames(members, train.passengerIds)}
-        </Text>
-      </View>
-
-      <View style={styles.actionsRow}>
-        <Pressable
-          onPress={onReopen}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.reopenButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.reopenButtonText}>Reopen</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onDelete}
-          style={({ pressed }) => [
-            styles.smallButton,
-            styles.deleteButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function AssignmentLine({
-  label,
-  value,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.assignmentLine,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View>
-        <Text style={styles.assignmentLabel}>{label}</Text>
-        <Text style={styles.assignmentValue}>{value}</Text>
-      </View>
-
-      <Text style={styles.assignmentEdit}>Edit</Text>
-    </Pressable>
+        )}
+      />
+    </RequireActiveAlliance>
   );
 }
 
@@ -671,5 +423,18 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.65,
+  },
+  createButton: {
+    backgroundColor: "#7c3aed",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  createButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
 });

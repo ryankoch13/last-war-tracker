@@ -1,239 +1,286 @@
-import { Stack } from "expo-router";
-import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+// app/settings.tsx
 
-import { useAllianceStore } from "../store/allianceStore";
+import * as Clipboard from "expo-clipboard";
+import { router } from "expo-router";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
+import { RequireActiveAlliance } from "../components/RequireActiveAlliance";
+import { useAlliance } from "../hooks/useAlliance";
+import { supabase } from "../lib/supabase";
 
 export default function SettingsScreen() {
-  const [isClearModalVisible, setIsClearModalVisible] = useState(false);
+  return (
+    <RequireActiveAlliance>
+      {({ activeAllianceId }) => (
+        <SettingsContent allianceId={activeAllianceId} />
+      )}
+    </RequireActiveAlliance>
+  );
+}
 
-  const loadDemoData = useAllianceStore((state) => state.loadDemoData);
-  const clearAllData = useAllianceStore((state) => state.clearAllData);
+function SettingsContent({ allianceId }: { allianceId: string }) {
+  const { alliance, loading, error, refresh, refreshing } =
+    useAlliance(allianceId);
 
-  const membersCount = useAllianceStore((state) => state.members.length);
-  const eventsCount = useAllianceStore((state) => state.events.length);
-  const trainsCount = useAllianceStore((state) => state.trains.length);
+  const [signingOut, setSigningOut] = useState(false);
 
-  const handleLoadDemoData = () => {
-    loadDemoData();
-  };
+  async function handleCopyInviteCode() {
+    if (!alliance?.invite_code) return;
 
-  const handleConfirmClear = () => {
-    clearAllData();
-    setIsClearModalVisible(false);
-  };
+    await Clipboard.setStringAsync(alliance.invite_code);
+    Alert.alert("Copied", "Invite code copied to clipboard.");
+  }
+
+  async function handleShareInviteCode() {
+    if (!alliance?.invite_code) return;
+
+    await Share.share({
+      message: `Join my Last War alliance tracker.\n\nAlliance: ${alliance.name}\nInvite code: ${alliance.invite_code}`,
+    });
+  }
+
+  async function handleSignOut() {
+    try {
+      setSigningOut(true);
+
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      router.replace("/sign-in");
+    } catch (err) {
+      Alert.alert(
+        "Could not sign out",
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator />
+        <Text style={styles.mutedText}>Loading settings...</Text>
+      </View>
+    );
+  }
+
+  if (error || !alliance) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.title}>Could not load settings</Text>
+        <Text style={styles.errorText}>{error ?? "Alliance not found."}</Text>
+
+        <Pressable
+          onPress={refresh}
+          disabled={refreshing}
+          style={styles.primaryButton}
+        >
+          <Text style={styles.primaryButtonText}>
+            {refreshing ? "Retrying..." : "Try Again"}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Settings",
-        }}
-      />
-
-      <View style={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
+        <Text style={styles.subtitle}>
+          Manage your alliance tracker settings.
+        </Text>
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Alliance Data</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Alliance</Text>
+        <Text style={styles.allianceName}>{alliance.name}</Text>
 
-          <Text style={styles.cardDescription}>
-            Manage your saved alliance members, events, and train assignments.
-          </Text>
+        <View style={styles.divider} />
 
-          <View style={styles.statsContainer}>
-            <Text style={styles.statText}>Members: {membersCount}</Text>
-            <Text style={styles.statText}>Events: {eventsCount}</Text>
-            <Text style={styles.statText}>Trains: {trainsCount}</Text>
-          </View>
+        <Text style={styles.cardLabel}>Invite Code</Text>
 
+        <Pressable onPress={handleCopyInviteCode} style={styles.inviteBox}>
+          <Text style={styles.inviteCode}>{alliance.invite_code}</Text>
+        </Pressable>
+
+        <Text style={styles.helperText}>
+          Share this code with alliance members so they can join your tracker.
+        </Text>
+
+        <View style={styles.buttonRow}>
           <Pressable
-            onPress={handleLoadDemoData}
-            style={({ pressed }) => [
-              styles.button,
-              styles.primaryButton,
-              pressed && styles.pressed,
-            ]}
+            onPress={handleCopyInviteCode}
+            style={[styles.actionButton, styles.secondaryButton]}
           >
-            <Text style={styles.primaryButtonText}>Load demo alliance</Text>
+            <Text style={styles.secondaryButtonText}>Copy</Text>
           </Pressable>
 
           <Pressable
-            onPress={() => setIsClearModalVisible(true)}
-            style={({ pressed }) => [
-              styles.button,
-              styles.dangerButton,
-              pressed && styles.pressed,
-            ]}
+            onPress={handleShareInviteCode}
+            style={[styles.actionButton, styles.primaryButton]}
           >
-            <Text style={styles.dangerButtonText}>Clear alliance data</Text>
+            <Text style={styles.primaryButtonText}>Share</Text>
           </Pressable>
         </View>
       </View>
 
-      <Modal
-        visible={isClearModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsClearModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Clear alliance data?</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Account</Text>
+        <Text style={styles.helperText}>
+          Sign out of this device. Your alliance data will remain saved.
+        </Text>
 
-            <Text style={styles.modalDescription}>
-              This will permanently delete your saved members, events, and train
-              assignments from this device.
-            </Text>
-
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setIsClearModalVisible(false)}
-                style={({ pressed }) => [
-                  styles.modalButton,
-                  styles.cancelModalButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.cancelModalButtonText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleConfirmClear}
-                style={({ pressed }) => [
-                  styles.modalButton,
-                  styles.confirmModalButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.confirmModalButtonText}>Clear</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </>
+        <Pressable
+          onPress={handleSignOut}
+          disabled={signingOut}
+          style={[styles.dangerButton, signingOut && styles.disabledButton]}
+        >
+          <Text style={styles.dangerButtonText}>
+            {signingOut ? "Signing Out..." : "Sign Out"}
+          </Text>
+        </Pressable>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    padding: 20,
-    backgroundColor: "#f7f7f8",
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 32,
+    gap: 16,
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 8,
+  },
+  header: {
+    gap: 4,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 20,
-    color: "#111827",
+    fontSize: 30,
+    fontWeight: "800",
+  },
+  subtitle: {
+    fontSize: 15,
+    opacity: 0.65,
+  },
+  mutedText: {
+    fontSize: 14,
+    opacity: 0.65,
+  },
+  errorText: {
+    color: "#b91c1c",
+    textAlign: "center",
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 18,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#e5e5e5",
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
   },
   cardTitle: {
     fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 6,
+    fontWeight: "800",
   },
-  cardDescription: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6b7280",
-    marginBottom: 16,
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    opacity: 0.65,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  statsContainer: {
-    gap: 6,
-    marginBottom: 18,
+  allianceName: {
+    fontSize: 24,
+    fontWeight: "900",
   },
-  statText: {
-    fontSize: 15,
-    color: "#374151",
+  divider: {
+    height: 1,
+    backgroundColor: "#e5e5e5",
+    marginVertical: 2,
   },
-  button: {
-    minHeight: 48,
-    borderRadius: 12,
+  inviteBox: {
+    borderWidth: 1,
+    borderColor: "#d8d0ff",
+    backgroundColor: "#f8f5ff",
+    borderRadius: 16,
+    paddingVertical: 18,
     alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
+  },
+  inviteCode: {
+    color: "#6d28d9",
+    fontSize: 30,
+    fontWeight: "900",
+    letterSpacing: 4,
+  },
+  helperText: {
+    fontSize: 14,
+    opacity: 0.65,
+    lineHeight: 20,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
   },
   primaryButton: {
-    backgroundColor: "#4f46e5",
+    backgroundColor: "#6d28d9",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
   },
   primaryButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
+    color: "white",
+    fontWeight: "800",
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: "#6d28d9",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    color: "#6d28d9",
+    fontWeight: "800",
   },
   dangerButton: {
-    backgroundColor: "#fee2e2",
     borderWidth: 1,
-    borderColor: "#fecaca",
+    borderColor: "#ef4444",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
   },
   dangerButtonText: {
-    color: "#b91c1c",
-    fontSize: 16,
-    fontWeight: "700",
+    color: "#dc2626",
+    fontWeight: "800",
   },
-  pressed: {
-    opacity: 0.7,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  modalDescription: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6b7280",
-    marginBottom: 20,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelModalButton: {
-    backgroundColor: "#f3f4f6",
-  },
-  cancelModalButtonText: {
-    color: "#374151",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  confirmModalButton: {
-    backgroundColor: "#dc2626",
-  },
-  confirmModalButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
+  disabledButton: {
+    opacity: 0.55,
   },
 });
