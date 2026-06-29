@@ -228,7 +228,7 @@ export function DashboardScreen() {
             value={topVsMember?.name ?? "—"}
             helper={
               topVsMember
-                ? `${formatCompactNumber(topVsTotal)} this week`
+                ? `${formatCompactNumber(topVsTotal ?? 0)} this week`
                 : "No VS data yet"
             }
           />
