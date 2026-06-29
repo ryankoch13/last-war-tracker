@@ -4,17 +4,21 @@ export type SquadType = "Tank" | "Air" | "Missile" | "Mixed";
 
 export type AllianceMember = {
   id: string;
-  username: string;
-  alliance_id: string;
-  rank: AllianceRole;
+  allianceId: string;
+  userId?: string | null;
+  name: string;
+  role: AllianceRole;
   power: number;
-  hqLevel: number;
-  mainSquad: SquadType;
-  timezone?: string;
-  lastActiveAt?: string;
+  level: number | null;
+  notes?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export type AllianceMemberWithStats = AllianceMember & {
   weeklyVsScore: number;
   weeklyDonations: number;
-  notes?: string;
 };
 
 export type ActiveAllianceState = {
@@ -22,6 +26,8 @@ export type ActiveAllianceState = {
   member: AllianceMember | null;
   activeAllianceId: string | null;
 };
+
+export type AllianceEventStatus = "upcoming" | "in-progress" | "completed";
 
 export type AllianceEventType =
   | "VS"
@@ -60,9 +66,19 @@ export type TrainAssignment = {
 
 export type DailyMemberStat = {
   id: string;
+  allianceId: string;
   memberId: string;
-  date: string; // "2026-06-27"
-  weeklyVs: number;
+  date: string;
+  vsScore: number;
+  donations: number;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export type SaveDailyMemberStatsInput = {
+  memberId: string;
+  date: string;
+  vsScore: number;
   donations: number;
 };
 

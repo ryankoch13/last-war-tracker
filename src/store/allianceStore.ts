@@ -54,16 +54,36 @@ export type AllianceMember = {
   updatedAt?: string | null;
 };
 
+export type AllianceMemberWithStats = AllianceMember & {
+  weeklyDonations: number;
+  weeklyVsScore: number;
+
+  /**
+   * Alias for screens/components that already use "vsScore"
+   * wording instead of "VS score".
+   */
+  weeklyvsScore: number;
+
+  statsThisWeek: DailyMemberStat[];
+};
+
 export type DailyMemberStat = {
   id: string;
   allianceId: string;
   memberId: string;
   date: string;
+  vsScore: number;
   donations: number;
-  versusPoints: number;
-  notes?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+};
+
+export type SaveDailyMemberStatsInput = {
+  memberId: string;
+  date: string;
+  notes: string | null;
+  vsScore: number;
+  donations: number;
 };
 
 export type TrainAssignment = {
@@ -94,12 +114,18 @@ export type AllianceEvent = {
   updatedAt?: string | null;
 };
 
+type DailyMemberStatInput = Omit<
+  DailyMemberStat,
+  "id" | "allianceId" | "createdAt" | "updatedAt"
+>;
+
 type AllianceStoreState = {
   activeAllianceId: string | null;
   activeAlliance: Alliance | null;
   allianceUser: AllianceUser | null;
 
   members: AllianceMember[];
+  membersWithStats: AllianceMemberWithStats[];
   dailyStats: DailyMemberStat[];
   trainAssignments: TrainAssignment[];
   events: AllianceEvent[];
@@ -130,15 +156,14 @@ type AllianceStoreState = {
   ) => Promise<void>;
   deleteMember: (memberId: string) => Promise<void>;
 
-  addDailyStat: (
-    stat: Omit<DailyMemberStat, "id" | "allianceId" | "createdAt">,
-  ) => Promise<void>;
+  addDailyStat: (stat: DailyMemberStatInput) => Promise<void>;
+  upsertDailyStat: (stat: DailyMemberStatInput) => Promise<void>;
   updateDailyStat: (
     statId: string,
     updates: Partial<DailyMemberStat>,
   ) => Promise<void>;
   deleteDailyStat: (statId: string) => Promise<void>;
-
+  saveDailyMemberStats: (input: SaveDailyMemberStatsInput) => Promise<void>;
   addTrainAssignment: (
     assignment: Omit<TrainAssignment, "id" | "allianceId" | "createdAt">,
   ) => Promise<void>;
@@ -161,12 +186,65 @@ type AllianceStoreState = {
   reopenAllianceEvent: (eventId: string) => Promise<void>;
   deleteAllianceEvent: (eventId: string) => Promise<void>;
 
+  getStatsForMember: (memberId: string) => DailyMemberStat[];
+  getCurrentWeekStatsForMember: (memberId: string) => DailyMemberStat[];
+  getMemberWithStats: (memberId: string) => AllianceMemberWithStats | undefined;
+  getMembersWithStats: () => AllianceMemberWithStats[];
+
   loadDemoData: () => void;
   clearDemoData: () => void;
 };
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeDateKey(value: string | null | undefined) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function getCurrentWeekRange() {
+  const today = parseDateKey(toDateKey(new Date()));
+
+  /**
+   * Monday-start week:
+   * Sunday = 0, Monday = 1, Tuesday = 2...
+   */
+  const day = today.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - daysSinceMonday);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  return {
+    weekStart: toDateKey(weekStart),
+    weekEnd: toDateKey(weekEnd),
+  };
+}
+
+function isCurrentWeekDate(date: string) {
+  const dateKey = normalizeDateKey(date);
+  const { weekStart, weekEnd } = getCurrentWeekRange();
+
+  return dateKey >= weekStart && dateKey <= weekEnd;
 }
 
 function generateInviteCode() {
@@ -180,7 +258,15 @@ function generateInviteCode() {
   return code;
 }
 
-function normalizeRole(role: string | null | undefined): AllianceRole {
+function cleanPayload<T extends Record<string, unknown>>(payload: T) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  );
+}
+
+function normalizeRole(
+  role: AllianceRole | string | null | undefined,
+): AllianceRole {
   const value = role?.toLowerCase();
 
   if (value === AllianceRole.R5) return AllianceRole.R5;
@@ -231,6 +317,55 @@ export function formatAllianceRole(
   return normalizeRole(role).toUpperCase();
 }
 
+function sortMembers(members: AllianceMember[]) {
+  return [...members].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function sortDailyStats(stats: DailyMemberStat[]) {
+  return [...stats].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function sortTrainAssignments(assignments: TrainAssignment[]) {
+  return [...assignments].sort((a, b) =>
+    normalizeDateKey(b.date).localeCompare(normalizeDateKey(a.date)),
+  );
+}
+
+function sortAllianceEvents(events: AllianceEvent[]) {
+  return [...events].sort((a, b) =>
+    normalizeDateKey(b.date).localeCompare(normalizeDateKey(a.date)),
+  );
+}
+
+function buildMembersWithStats(
+  members: AllianceMember[],
+  dailyStats: DailyMemberStat[],
+): AllianceMemberWithStats[] {
+  return sortMembers(members).map((member) => {
+    const statsThisWeek = dailyStats.filter(
+      (stat) => stat.memberId === member.id && isCurrentWeekDate(stat.date),
+    );
+
+    const weeklyDonations = statsThisWeek.reduce(
+      (total, stat) => total + Number(stat.donations ?? 0),
+      0,
+    );
+
+    const weeklyVsScore = statsThisWeek.reduce(
+      (total, stat) => total + Number(stat.vsScore ?? 0),
+      0,
+    );
+
+    return {
+      ...member,
+      weeklyDonations,
+      weeklyVsScore,
+      weeklyvsScore: weeklyVsScore,
+      statsThisWeek: sortDailyStats(statsThisWeek),
+    };
+  });
+}
+
 function mapAlliance(row: any): Alliance {
   return {
     id: row.id,
@@ -251,12 +386,30 @@ function mapAllianceUser(row: any): AllianceUser {
   };
 }
 
+function mapDailyMemberStat(row: any): DailyMemberStat {
+  return {
+    id: row.id,
+    allianceId: row.alliance_id,
+    memberId: row.member_id,
+    date: row.date,
+    vsScore: row.vs_score ?? 0,
+    donations: row.donations ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function mapMember(row: any): AllianceMember {
   return {
     id: row.id,
     allianceId: row.alliance_id,
     userId: row.user_id ?? null,
-    name: row.display_name ?? row.name ?? row.username ?? "Unnamed Member",
+    name:
+      row.display_name ??
+      row.name ??
+      row.member_name ??
+      row.username ??
+      "Unnamed Member",
     role: normalizeRole(row.role),
     power: Number(row.power ?? 0),
     level: row.level ?? null,
@@ -272,9 +425,9 @@ function mapDailyStat(row: any): DailyMemberStat {
     id: row.id,
     allianceId: row.alliance_id,
     memberId: row.member_id,
-    date: row.date,
+    date: normalizeDateKey(row.date),
     donations: Number(row.donations ?? 0),
-    versusPoints: Number(row.versus_points ?? 0),
+    vsScore: Number(row.versus_points ?? row.vsScore ?? 0),
     notes: row.notes ?? null,
     createdAt: row.created_at ?? nowIso(),
     updatedAt: row.updated_at ?? null,
@@ -285,8 +438,8 @@ function mapTrainAssignment(row: any): TrainAssignment {
   return {
     id: row.id,
     allianceId: row.alliance_id,
-    date: row.date,
-    trainName: row.train_name ?? "Train",
+    date: normalizeDateKey(row.date ?? row.starts_at ?? row.created_at),
+    trainName: row.train_name ?? row.title ?? "Train",
     conductorMemberId: row.conductor_member_id ?? null,
     passengerMemberId: row.passenger_member_id ?? null,
     notes: row.notes ?? null,
@@ -301,9 +454,9 @@ function mapAllianceEvent(row: any): AllianceEvent {
   return {
     id: row.id,
     allianceId: row.alliance_id,
-    name: row.name ?? "Event",
-    type: normalizeEventType(row.type),
-    date: row.date,
+    name: row.name ?? row.title ?? "Event",
+    type: normalizeEventType(row.type ?? row.event_type),
+    date: row.date ?? row.starts_at ?? row.start_at ?? nowIso(),
     notes: row.notes ?? null,
     assignedMemberIds: row.assigned_member_ids ?? [],
     status: normalizeStatus(row.status),
@@ -320,37 +473,19 @@ async function loadAllianceData(allianceId: string) {
     trainAssignmentsResult,
     eventsResult,
   ] = await Promise.all([
-    supabase
-      .from("members")
-      .select(
-        "id,alliance_id,user_id,display_name,role,power,level,notes,is_active,created_at,updated_at",
-      )
-      .eq("alliance_id", allianceId)
-      .order("display_name", { ascending: true }),
+    supabase.from("members").select("*").eq("alliance_id", allianceId),
 
     supabase
       .from("daily_member_stats")
-      .select(
-        "id,alliance_id,member_id,date,donations,versus_points,notes,created_at,updated_at",
-      )
-      .eq("alliance_id", allianceId)
-      .order("date", { ascending: false }),
+      .select("*")
+      .eq("alliance_id", allianceId),
 
     supabase
       .from("train_assignments")
-      .select(
-        "id,alliance_id,date,train_name,conductor_member_id,passenger_member_id,notes,status,completed_at,created_at,updated_at",
-      )
-      .eq("alliance_id", allianceId)
-      .order("date", { ascending: false }),
+      .select("*")
+      .eq("alliance_id", allianceId),
 
-    supabase
-      .from("alliance_events")
-      .select(
-        "id,alliance_id,name,type,date,notes,assigned_member_ids,status,completed_at,created_at,updated_at",
-      )
-      .eq("alliance_id", allianceId)
-      .order("date", { ascending: false }),
+    supabase.from("alliance_events").select("*").eq("alliance_id", allianceId),
   ]);
 
   if (membersResult.error) throw membersResult.error;
@@ -358,13 +493,19 @@ async function loadAllianceData(allianceId: string) {
   if (trainAssignmentsResult.error) throw trainAssignmentsResult.error;
   if (eventsResult.error) throw eventsResult.error;
 
+  const members = sortMembers((membersResult.data ?? []).map(mapMember));
+  const dailyStats = sortDailyStats(
+    (dailyStatsResult.data ?? []).map(mapDailyStat),
+  );
+
   return {
-    members: (membersResult.data ?? []).map(mapMember),
-    dailyStats: (dailyStatsResult.data ?? []).map(mapDailyStat),
-    trainAssignments: (trainAssignmentsResult.data ?? []).map(
-      mapTrainAssignment,
+    members,
+    membersWithStats: buildMembersWithStats(members, dailyStats),
+    dailyStats,
+    trainAssignments: sortTrainAssignments(
+      (trainAssignmentsResult.data ?? []).map(mapTrainAssignment),
     ),
-    events: (eventsResult.data ?? []).map(mapAllianceEvent),
+    events: sortAllianceEvents((eventsResult.data ?? []).map(mapAllianceEvent)),
   };
 }
 
@@ -374,6 +515,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
   allianceUser: null,
 
   members: [],
+  membersWithStats: [],
   dailyStats: [],
   trainAssignments: [],
   events: [],
@@ -391,9 +533,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        throw userError;
-      }
+      if (userError) throw userError;
 
       if (!user) {
         set({
@@ -401,6 +541,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           activeAlliance: null,
           allianceUser: null,
           members: [],
+          membersWithStats: [],
           dailyStats: [],
           trainAssignments: [],
           events: [],
@@ -413,15 +554,13 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
 
       const { data: allianceUserRow, error: allianceUserError } = await supabase
         .from("alliance_users")
-        .select("alliance_id,user_id,role,created_at")
+        .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (allianceUserError) {
-        throw allianceUserError;
-      }
+      if (allianceUserError) throw allianceUserError;
 
       if (!allianceUserRow) {
         set({
@@ -429,6 +568,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           activeAlliance: null,
           allianceUser: null,
           members: [],
+          membersWithStats: [],
           dailyStats: [],
           trainAssignments: [],
           events: [],
@@ -441,13 +581,11 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
 
       const { data: allianceRow, error: allianceError } = await supabase
         .from("alliances")
-        .select("id,name,invite_code,created_by,created_at,updated_at")
+        .select("*")
         .eq("id", allianceUserRow.alliance_id)
         .maybeSingle();
 
-      if (allianceError) {
-        throw allianceError;
-      }
+      if (allianceError) throw allianceError;
 
       if (!allianceRow) {
         set({
@@ -455,6 +593,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           activeAlliance: null,
           allianceUser: null,
           members: [],
+          membersWithStats: [],
           dailyStats: [],
           trainAssignments: [],
           events: [],
@@ -486,6 +625,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
         activeAlliance: null,
         allianceUser: null,
         members: [],
+        membersWithStats: [],
         dailyStats: [],
         trainAssignments: [],
         events: [],
@@ -540,7 +680,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           invite_code: generateInviteCode(),
           created_by: user.id,
         })
-        .select("id,name,invite_code,created_by,created_at,updated_at")
+        .select("*")
         .single();
 
       if (allianceError) throw allianceError;
@@ -552,7 +692,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           user_id: user.id,
           role: AllianceRole.R5,
         })
-        .select("alliance_id,user_id,role,created_at")
+        .select("*")
         .single();
 
       if (allianceUserError) throw allianceUserError;
@@ -569,9 +709,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
           notes: null,
           is_active: true,
         })
-        .select(
-          "id,alliance_id,user_id,display_name,role,power,level,notes,is_active,created_at,updated_at",
-        )
+        .select("*")
         .single();
 
       if (memberError) throw memberError;
@@ -579,13 +717,16 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       const activeAlliance = mapAlliance(allianceRow);
       const allianceUser = mapAllianceUser(allianceUserRow);
       const currentMember = mapMember(memberRow);
+      const members = [currentMember];
+      const dailyStats: DailyMemberStat[] = [];
 
       set({
         activeAllianceId: activeAlliance.id,
         activeAlliance,
         allianceUser,
-        members: [currentMember],
-        dailyStats: [],
+        members,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+        dailyStats,
         trainAssignments: [],
         events: [],
         loading: false,
@@ -635,7 +776,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
 
       const { data: allianceRow, error: allianceError } = await supabase
         .from("alliances")
-        .select("id,name,invite_code,created_by,created_at,updated_at")
+        .select("*")
         .eq("invite_code", trimmedInviteCode)
         .maybeSingle();
 
@@ -665,7 +806,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
             onConflict: "alliance_id,user_id",
           },
         )
-        .select("alliance_id,user_id,role,created_at")
+        .select("*")
         .single();
 
       if (allianceUserError) throw allianceUserError;
@@ -676,22 +817,16 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
         .eq("alliance_id", allianceRow.id)
         .eq("user_id", user.id);
 
-      const { data: memberRow, error: memberError } = await supabase
-        .from("members")
-        .insert({
-          alliance_id: allianceRow.id,
-          user_id: user.id,
-          display_name: trimmedMemberName,
-          role: AllianceRole.R1,
-          power: 0,
-          level: null,
-          notes: null,
-          is_active: true,
-        })
-        .select(
-          "id,alliance_id,user_id,display_name,role,power,level,notes,is_active,created_at,updated_at",
-        )
-        .single();
+      const { error: memberError } = await supabase.from("members").insert({
+        alliance_id: allianceRow.id,
+        user_id: user.id,
+        display_name: trimmedMemberName,
+        role: AllianceRole.R1,
+        power: 0,
+        level: null,
+        notes: null,
+        is_active: true,
+      });
 
       if (memberError) throw memberError;
 
@@ -704,12 +839,6 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
         activeAlliance,
         allianceUser,
         ...allianceData,
-        members: [
-          ...allianceData.members.filter(
-            (member) => member.id !== memberRow.id,
-          ),
-          mapMember(memberRow),
-        ].sort((a, b) => a.name.localeCompare(b.name)),
         loading: false,
         hasLoaded: true,
         error: null,
@@ -735,6 +864,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       activeAlliance: null,
       allianceUser: null,
       members: [],
+      membersWithStats: [],
       dailyStats: [],
       trainAssignments: [],
       events: [],
@@ -758,6 +888,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       activeAlliance: null,
       allianceUser: null,
       members: [],
+      membersWithStats: [],
       dailyStats: [],
       trainAssignments: [],
       events: [],
@@ -780,25 +911,19 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw new Error("Member name is required.");
     }
 
-    const payload = {
-      alliance_id: allianceId,
-      user_id: member.userId ?? null,
-      display_name: trimmedName,
-      role: normalizeRole(member.role),
-      power: Number(member.power ?? 0),
-      level: member.level ?? null,
-      notes: member.notes?.trim() ? member.notes.trim() : null,
-      is_active: member.isActive ?? true,
-    };
-
-    console.log("ADDING MEMBER PAYLOAD:", payload);
-
     const { data: memberRow, error } = await supabase
       .from("members")
-      .insert(payload)
-      .select(
-        "id,alliance_id,user_id,display_name,role,power,level,notes,is_active,created_at,updated_at",
-      )
+      .insert({
+        alliance_id: allianceId,
+        user_id: member.userId ?? null,
+        display_name: trimmedName,
+        role: normalizeRole(member.role),
+        power: Number(member.power ?? 0),
+        level: member.level ?? null,
+        notes: member.notes?.trim() ? member.notes.trim() : null,
+        is_active: member.isActive ?? true,
+      })
+      .select("*")
       .single();
 
     if (error) {
@@ -806,36 +931,50 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw error;
     }
 
-    console.log("ADDED MEMBER ROW:", memberRow);
-
     const newMember = mapMember(memberRow);
 
-    set((state) => ({
-      members: [...(state.members ?? []), newMember].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      ),
-    }));
+    set((state) => {
+      const members = sortMembers([...(state.members ?? []), newMember]);
+      const dailyStats = state.dailyStats ?? [];
 
-    // Safety reload so every screen gets the freshest Supabase version.
-    await get().loadActiveAlliance();
+      return {
+        members,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
   },
 
   updateMember: async (memberId, updates) => {
+    if (updates.name !== undefined && !updates.name.trim()) {
+      throw new Error("Member name is required.");
+    }
+
     const { data: memberRow, error } = await supabase
       .from("members")
-      .update({
-        display_name: updates.name,
-        role: updates.role ? normalizeRole(updates.role) : undefined,
-        power:
-          updates.power === undefined ? undefined : Number(updates.power ?? 0),
-        level: updates.level,
-        notes: updates.notes,
-        is_active: updates.isActive,
-      })
-      .eq("id", memberId)
-      .select(
-        "id,alliance_id,user_id,display_name,role,power,level,notes,is_active,created_at,updated_at",
+      .update(
+        cleanPayload({
+          display_name: updates.name?.trim(),
+          role:
+            updates.role === undefined
+              ? undefined
+              : normalizeRole(updates.role),
+          power:
+            updates.power === undefined
+              ? undefined
+              : Number(updates.power ?? 0),
+          level:
+            updates.level === undefined ? undefined : (updates.level ?? null),
+          notes:
+            updates.notes === undefined
+              ? undefined
+              : updates.notes?.trim()
+                ? updates.notes.trim()
+                : null,
+          is_active: updates.isActive,
+        }),
       )
+      .eq("id", memberId)
+      .select("*")
       .single();
 
     if (error) {
@@ -845,14 +984,38 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
 
     const updatedMember = mapMember(memberRow);
 
-    set((state) => ({
-      members: (state.members ?? [])
-        .map((member) => (member.id === memberId ? updatedMember : member))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    }));
+    set((state) => {
+      const members = sortMembers(
+        (state.members ?? []).map((member) =>
+          member.id === memberId ? updatedMember : member,
+        ),
+      );
+
+      const dailyStats = state.dailyStats ?? [];
+
+      return {
+        members,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
   },
 
   deleteMember: async (memberId) => {
+    await supabase
+      .from("daily_member_stats")
+      .delete()
+      .eq("member_id", memberId);
+
+    await supabase
+      .from("train_assignments")
+      .update({ conductor_member_id: null })
+      .eq("conductor_member_id", memberId);
+
+    await supabase
+      .from("train_assignments")
+      .update({ passenger_member_id: null })
+      .eq("passenger_member_id", memberId);
+
     const { error } = await supabase
       .from("members")
       .delete()
@@ -863,78 +1026,147 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw error;
     }
 
-    set((state) => ({
-      members: (state.members ?? []).filter((member) => member.id !== memberId),
-      dailyStats: (state.dailyStats ?? []).filter(
+    set((state) => {
+      const members = (state.members ?? []).filter(
+        (member) => member.id !== memberId,
+      );
+
+      const dailyStats = (state.dailyStats ?? []).filter(
         (stat) => stat.memberId !== memberId,
-      ),
-      trainAssignments: (state.trainAssignments ?? []).filter(
-        (assignment) =>
-          assignment.conductorMemberId !== memberId &&
-          assignment.passengerMemberId !== memberId,
-      ),
-      events: (state.events ?? []).map((event) => ({
-        ...event,
-        assignedMemberIds: (event.assignedMemberIds ?? []).filter(
-          (assignedMemberId) => assignedMemberId !== memberId,
-        ),
-      })),
-    }));
+      );
+
+      return {
+        members,
+        dailyStats,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+        trainAssignments: (state.trainAssignments ?? []).map((assignment) => ({
+          ...assignment,
+          conductorMemberId:
+            assignment.conductorMemberId === memberId
+              ? null
+              : assignment.conductorMemberId,
+          passengerMemberId:
+            assignment.passengerMemberId === memberId
+              ? null
+              : assignment.passengerMemberId,
+        })),
+        events: (state.events ?? []).map((event) => ({
+          ...event,
+          assignedMemberIds: (event.assignedMemberIds ?? []).filter(
+            (assignedMemberId) => assignedMemberId !== memberId,
+          ),
+        })),
+      };
+    });
   },
 
   addDailyStat: async (stat) => {
+    await get().upsertDailyStat(stat);
+  },
+
+  upsertDailyStat: async (stat) => {
     const allianceId = get().activeAllianceId;
 
     if (!allianceId) {
       throw new Error("No active alliance selected.");
     }
 
-    const { data: statRow, error } = await supabase
+    const date = normalizeDateKey(stat.date);
+
+    if (!stat.memberId) {
+      throw new Error("Member is required.");
+    }
+
+    if (!date) {
+      throw new Error("Date is required.");
+    }
+
+    const normalizedPayload = {
+      alliance_id: allianceId,
+      member_id: stat.memberId,
+      date,
+      donations: Number(stat.donations ?? 0),
+      versus_points: Number(stat.vsScore ?? 0),
+      notes: stat.notes?.trim() ? stat.notes.trim() : null,
+    };
+
+    const { data: existingStat, error: existingError } = await supabase
       .from("daily_member_stats")
-      .insert({
-        alliance_id: allianceId,
-        member_id: stat.memberId,
-        date: stat.date,
-        donations: Number(stat.donations ?? 0),
-        versus_points: Number(stat.versusPoints ?? 0),
-        notes: stat.notes ?? null,
-      })
-      .select(
-        "id,alliance_id,member_id,date,donations,versus_points,notes,created_at,updated_at",
-      )
-      .single();
+      .select("id")
+      .eq("alliance_id", allianceId)
+      .eq("member_id", stat.memberId)
+      .eq("date", date)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("FIND DAILY STAT ERROR:", existingError);
+      throw existingError;
+    }
+
+    const request = existingStat
+      ? supabase
+          .from("daily_member_stats")
+          .update(normalizedPayload)
+          .eq("id", existingStat.id)
+          .select("*")
+          .single()
+      : supabase
+          .from("daily_member_stats")
+          .insert(normalizedPayload)
+          .select("*")
+          .single();
+
+    const { data: statRow, error } = await request;
 
     if (error) {
-      console.error("ADD DAILY STAT ERROR:", error);
+      console.error("UPSERT DAILY STAT ERROR:", error);
       throw error;
     }
 
-    const newStat = mapDailyStat(statRow);
+    const savedStat = mapDailyStat(statRow);
 
-    set((state) => ({
-      dailyStats: [newStat, ...(state.dailyStats ?? [])],
-    }));
+    set((state) => {
+      const dailyStats = sortDailyStats([
+        savedStat,
+        ...(state.dailyStats ?? []).filter((item) => item.id !== savedStat.id),
+      ]);
+
+      const members = state.members ?? [];
+
+      return {
+        dailyStats,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
   },
 
   updateDailyStat: async (statId, updates) => {
     const { data: statRow, error } = await supabase
       .from("daily_member_stats")
-      .update({
-        date: updates.date,
-        donations:
-          updates.donations === undefined
-            ? undefined
-            : Number(updates.donations ?? 0),
-        versus_points:
-          updates.versusPoints === undefined
-            ? undefined
-            : Number(updates.versusPoints ?? 0),
-        notes: updates.notes,
-      })
-      .eq("id", statId)
-      .select(
-        "id,alliance_id,member_id,date,donations,versus_points,notes,created_at,updated_at",
+      .update(
+        cleanPayload({
+          date:
+            updates.date === undefined
+              ? undefined
+              : normalizeDateKey(updates.date),
+          donations:
+            updates.donations === undefined
+              ? undefined
+              : Number(updates.donations ?? 0),
+          versus_points:
+            updates.vsScore === undefined
+              ? undefined
+              : Number(updates.vsScore ?? 0),
+          notes:
+            updates.notes === undefined
+              ? undefined
+              : updates.notes?.trim()
+                ? updates.notes.trim()
+                : null,
+        }),
       )
+      .eq("id", statId)
+      .select("*")
       .single();
 
     if (error) {
@@ -944,11 +1176,20 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
 
     const updatedStat = mapDailyStat(statRow);
 
-    set((state) => ({
-      dailyStats: (state.dailyStats ?? []).map((stat) =>
-        stat.id === statId ? updatedStat : stat,
-      ),
-    }));
+    set((state) => {
+      const dailyStats = sortDailyStats(
+        (state.dailyStats ?? []).map((stat) =>
+          stat.id === statId ? updatedStat : stat,
+        ),
+      );
+
+      const members = state.members ?? [];
+
+      return {
+        dailyStats,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
   },
 
   deleteDailyStat: async (statId) => {
@@ -962,9 +1203,18 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw error;
     }
 
-    set((state) => ({
-      dailyStats: (state.dailyStats ?? []).filter((stat) => stat.id !== statId),
-    }));
+    set((state) => {
+      const dailyStats = (state.dailyStats ?? []).filter(
+        (stat) => stat.id !== statId,
+      );
+
+      const members = state.members ?? [];
+
+      return {
+        dailyStats,
+        membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
   },
 
   addTrainAssignment: async (assignment) => {
@@ -974,22 +1224,26 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw new Error("No active alliance selected.");
     }
 
+    const trainName = assignment.trainName.trim();
+
+    if (!trainName) {
+      throw new Error("Train name is required.");
+    }
+
     const { data: assignmentRow, error } = await supabase
       .from("train_assignments")
       .insert({
         alliance_id: allianceId,
-        date: assignment.date,
-        title: assignment.trainName,
-        train_name: assignment.trainName,
+        date: normalizeDateKey(assignment.date),
+        title: trainName,
+        train_name: trainName,
         conductor_member_id: assignment.conductorMemberId ?? null,
         passenger_member_id: assignment.passengerMemberId ?? null,
-        notes: assignment.notes ?? null,
+        notes: assignment.notes?.trim() ? assignment.notes.trim() : null,
         status: assignment.status ?? BoardItemStatus.Active,
         completed_at: assignment.completedAt ?? null,
       })
-      .select(
-        "id,alliance_id,date,train_name,conductor_member_id,passenger_member_id,notes,status,completed_at,created_at,updated_at",
-      )
+      .select("*")
       .single();
 
     if (error) {
@@ -1000,26 +1254,51 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     const newAssignment = mapTrainAssignment(assignmentRow);
 
     set((state) => ({
-      trainAssignments: [newAssignment, ...(state.trainAssignments ?? [])],
+      trainAssignments: sortTrainAssignments([
+        newAssignment,
+        ...(state.trainAssignments ?? []),
+      ]),
     }));
   },
 
   updateTrainAssignment: async (assignmentId, updates) => {
+    if (updates.trainName !== undefined && !updates.trainName.trim()) {
+      throw new Error("Train name is required.");
+    }
+
     const { data: assignmentRow, error } = await supabase
       .from("train_assignments")
-      .update({
-        date: updates.date,
-        train_name: updates.trainName,
-        conductor_member_id: updates.conductorMemberId,
-        passenger_member_id: updates.passengerMemberId,
-        notes: updates.notes,
-        status: updates.status,
-        completed_at: updates.completedAt,
-      })
-      .eq("id", assignmentId)
-      .select(
-        "id,alliance_id,date,train_name,conductor_member_id,passenger_member_id,notes,status,completed_at,created_at,updated_at",
+      .update(
+        cleanPayload({
+          date:
+            updates.date === undefined
+              ? undefined
+              : normalizeDateKey(updates.date),
+          title: updates.trainName?.trim(),
+          train_name: updates.trainName?.trim(),
+          conductor_member_id:
+            updates.conductorMemberId === undefined
+              ? undefined
+              : (updates.conductorMemberId ?? null),
+          passenger_member_id:
+            updates.passengerMemberId === undefined
+              ? undefined
+              : (updates.passengerMemberId ?? null),
+          notes:
+            updates.notes === undefined
+              ? undefined
+              : updates.notes?.trim()
+                ? updates.notes.trim()
+                : null,
+          status: updates.status,
+          completed_at:
+            updates.completedAt === undefined
+              ? undefined
+              : (updates.completedAt ?? null),
+        }),
       )
+      .eq("id", assignmentId)
+      .select("*")
       .single();
 
     if (error) {
@@ -1030,8 +1309,10 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     const updatedAssignment = mapTrainAssignment(assignmentRow);
 
     set((state) => ({
-      trainAssignments: (state.trainAssignments ?? []).map((assignment) =>
-        assignment.id === assignmentId ? updatedAssignment : assignment,
+      trainAssignments: sortTrainAssignments(
+        (state.trainAssignments ?? []).map((assignment) =>
+          assignment.id === assignmentId ? updatedAssignment : assignment,
+        ),
       ),
     }));
   },
@@ -1075,19 +1356,25 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       throw new Error("No active alliance selected.");
     }
 
+    const eventName = event.name.trim();
+
+    if (!eventName) {
+      throw new Error("Event name is required.");
+    }
+
     const { data: eventRow, error } = await supabase
       .from("alliance_events")
       .insert({
         alliance_id: allianceId,
-        title: event.name,
-        type: event.type,
+        title: eventName,
         starts_at: event.date,
-        notes: event.notes ?? null,
+        type: event.type,
+        notes: event.notes?.trim() ? event.notes.trim() : null,
         assigned_member_ids: event.assignedMemberIds ?? [],
         status: event.status ?? BoardItemStatus.Active,
         completed_at: event.completedAt ?? null,
       })
-      .select()
+      .select("*")
       .single();
 
     if (error) {
@@ -1098,26 +1385,38 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     const newEvent = mapAllianceEvent(eventRow);
 
     set((state) => ({
-      events: [newEvent, ...(state.events ?? [])],
+      events: sortAllianceEvents([newEvent, ...(state.events ?? [])]),
     }));
   },
 
   updateAllianceEvent: async (eventId, updates) => {
+    if (updates.name !== undefined && !updates.name.trim()) {
+      throw new Error("Event name is required.");
+    }
+
     const { data: eventRow, error } = await supabase
       .from("alliance_events")
-      .update({
-        name: updates.name,
-        type: updates.type,
-        date: updates.date,
-        notes: updates.notes,
-        assigned_member_ids: updates.assignedMemberIds,
-        status: updates.status,
-        completed_at: updates.completedAt,
-      })
-      .eq("id", eventId)
-      .select(
-        "id,alliance_id,name,type,date,notes,assigned_member_ids,status,completed_at,created_at,updated_at",
+      .update(
+        cleanPayload({
+          title: updates.name?.trim(),
+          starts_at: updates.date,
+          type: updates.type,
+          notes:
+            updates.notes === undefined
+              ? undefined
+              : updates.notes?.trim()
+                ? updates.notes.trim()
+                : null,
+          assigned_member_ids: updates.assignedMemberIds,
+          status: updates.status,
+          completed_at:
+            updates.completedAt === undefined
+              ? undefined
+              : (updates.completedAt ?? null),
+        }),
       )
+      .eq("id", eventId)
+      .select("*")
       .single();
 
     if (error) {
@@ -1128,8 +1427,10 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     const updatedEvent = mapAllianceEvent(eventRow);
 
     set((state) => ({
-      events: (state.events ?? []).map((event) =>
-        event.id === eventId ? updatedEvent : event,
+      events: sortAllianceEvents(
+        (state.events ?? []).map((event) =>
+          event.id === eventId ? updatedEvent : event,
+        ),
       ),
     }));
   },
@@ -1164,38 +1465,152 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     }));
   },
 
+  getStatsForMember: (memberId) => {
+    return sortDailyStats(
+      (get().dailyStats ?? []).filter((stat) => stat.memberId === memberId),
+    );
+  },
+
+  getCurrentWeekStatsForMember: (memberId) => {
+    return sortDailyStats(
+      (get().dailyStats ?? []).filter(
+        (stat) => stat.memberId === memberId && isCurrentWeekDate(stat.date),
+      ),
+    );
+  },
+
+  getMemberWithStats: (memberId) => {
+    return get().membersWithStats.find((member) => member.id === memberId);
+  },
+
+  getMembersWithStats: () => {
+    const { members, dailyStats } = get();
+    return buildMembersWithStats(members ?? [], dailyStats ?? []);
+  },
+
+  saveDailyMemberStats: async (input) => {
+    const activeAllianceId = get().activeAllianceId;
+
+    if (!activeAllianceId) {
+      throw new Error("No active alliance selected.");
+    }
+
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from("daily_member_stats")
+      .upsert(
+        {
+          alliance_id: activeAllianceId,
+          member_id: input.memberId,
+          date: input.date,
+          vs_score: input.vsScore,
+          donations: input.donations,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          onConflict: "alliance_id,member_id,date",
+        },
+      )
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const savedStat = mapDailyMemberStat(data);
+
+    set((state) => {
+      const currentDailyStats = state.dailyStats ?? [];
+
+      const alreadyExists = currentDailyStats.some(
+        (stat) =>
+          stat.allianceId === savedStat.allianceId &&
+          stat.memberId === savedStat.memberId &&
+          stat.date === savedStat.date,
+      );
+
+      if (!alreadyExists) {
+        return {
+          dailyStats: [savedStat, ...currentDailyStats],
+        };
+      }
+
+      return {
+        dailyStats: currentDailyStats.map((stat) =>
+          stat.allianceId === savedStat.allianceId &&
+          stat.memberId === savedStat.memberId &&
+          stat.date === savedStat.date
+            ? savedStat
+            : stat,
+        ),
+      };
+    });
+  },
+
   loadDemoData: () => {
     const activeAllianceId = get().activeAllianceId ?? "demo-alliance";
     const createdAt = nowIso();
+    const today = toDateKey(new Date());
+
+    const members: AllianceMember[] = [
+      {
+        id: "demo-member-1",
+        allianceId: activeAllianceId,
+        name: "Player One",
+        role: AllianceRole.R5,
+        power: 54000000,
+        level: 29,
+        notes: "Alliance lead",
+        isActive: true,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "demo-member-2",
+        allianceId: activeAllianceId,
+        name: "Player Two",
+        role: AllianceRole.R4,
+        power: 42000000,
+        level: 28,
+        notes: "Train lead",
+        isActive: true,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ];
+
+    const dailyStats: DailyMemberStat[] = [
+      {
+        id: "demo-stat-1",
+        allianceId: activeAllianceId,
+        memberId: "demo-member-1",
+        date: today,
+        donations: 50000,
+        vsScore: 1250000,
+        notes: "Demo stat",
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "demo-stat-2",
+        allianceId: activeAllianceId,
+        memberId: "demo-member-2",
+        date: today,
+        donations: 35000,
+        vsScore: 875000,
+        notes: "Demo stat",
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ];
 
     set({
-      members: [
-        {
-          id: "demo-member-1",
-          allianceId: activeAllianceId,
-          name: "Player One",
-          role: AllianceRole.R5,
-          power: 54000000,
-          level: 29,
-          notes: "Alliance lead",
-          isActive: true,
-          createdAt,
-          updatedAt: createdAt,
-        },
-        {
-          id: "demo-member-2",
-          allianceId: activeAllianceId,
-          name: "Player Two",
-          role: AllianceRole.R4,
-          power: 42000000,
-          level: 28,
-          notes: "Train lead",
-          isActive: true,
-          createdAt,
-          updatedAt: createdAt,
-        },
-      ],
-      dailyStats: [],
+      members,
+      membersWithStats: buildMembersWithStats(members, dailyStats),
+      dailyStats,
       trainAssignments: [],
       events: [],
     });
@@ -1204,6 +1619,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
   clearDemoData: () => {
     set({
       members: [],
+      membersWithStats: [],
       dailyStats: [],
       trainAssignments: [],
       events: [],

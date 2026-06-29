@@ -99,9 +99,9 @@ export function DashboardScreen() {
     }, 0);
   }, [todaysStats]);
 
-  const todaysVersusPoints = useMemo(() => {
+  const todaysvsScore = useMemo(() => {
     return todaysStats.reduce((sum, stat) => {
-      return sum + Number(stat.versusPoints ?? 0);
+      return sum + Number(stat.vsScore ?? 0);
     }, 0);
   }, [todaysStats]);
 
@@ -111,9 +111,9 @@ export function DashboardScreen() {
     }, 0);
   }, [weekStats]);
 
-  const weeklyVersusPoints = useMemo(() => {
+  const weeklyvsScore = useMemo(() => {
     return weekStats.reduce((sum, stat) => {
-      return sum + Number(stat.versusPoints ?? 0);
+      return sum + Number(stat.vsScore ?? 0);
     }, 0);
   }, [weekStats]);
 
@@ -122,19 +122,19 @@ export function DashboardScreen() {
       string,
       {
         donations: number;
-        versusPoints: number;
+        vsScore: number;
       }
     >();
 
     weekStats.forEach((stat) => {
       const existing = totals.get(stat.memberId) ?? {
         donations: 0,
-        versusPoints: 0,
+        vsScore: 0,
       };
 
       totals.set(stat.memberId, {
         donations: existing.donations + Number(stat.donations ?? 0),
-        versusPoints: existing.versusPoints + Number(stat.versusPoints ?? 0),
+        vsScore: existing.vsScore + Number(stat.vsScore ?? 0),
       });
     });
 
@@ -143,15 +143,15 @@ export function DashboardScreen() {
 
   const topVsMember = useMemo(() => {
     return activeMembers.slice().sort((a, b) => {
-      const aTotal = memberWeeklyTotals.get(a.id)?.versusPoints ?? 0;
-      const bTotal = memberWeeklyTotals.get(b.id)?.versusPoints ?? 0;
+      const aTotal = memberWeeklyTotals.get(a.id)?.vsScore ?? 0;
+      const bTotal = memberWeeklyTotals.get(b.id)?.vsScore ?? 0;
 
       return bTotal - aTotal;
     })[0];
   }, [activeMembers, memberWeeklyTotals]);
 
   const topVsTotal = topVsMember
-    ? (memberWeeklyTotals.get(topVsMember.id)?.versusPoints ?? 0)
+    ? (memberWeeklyTotals.get(topVsMember.id)?.vsScore ?? 0)
     : 0;
 
   const lowDonationMembers = useMemo(() => {
@@ -217,8 +217,8 @@ export function DashboardScreen() {
           />
           <StatCard
             label="Today's VS"
-            value={formatCompactNumber(todaysVersusPoints)}
-            helper={`${formatCompactNumber(weeklyVersusPoints)} this week`}
+            value={formatCompactNumber(todaysvsScore)}
+            helper={`${formatCompactNumber(weeklyvsScore)} this week`}
           />
         </View>
 
