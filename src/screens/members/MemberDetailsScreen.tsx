@@ -1,7 +1,8 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
@@ -70,29 +71,8 @@ export function MemberDetailScreen() {
     );
   }
 
-  if (!member) {
-    return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Member not found",
-          }}
-        />
-
-        <View style={styles.center}>
-          <Text style={styles.title}>Member not found</Text>
-        </View>
-      </>
-    );
-  }
-
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: member.username,
-        }}
-      />
+    <RequireActiveAlliance>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -108,30 +88,16 @@ export function MemberDetailScreen() {
           <Info label="Power" value={formatCompactNumber(member.power)} />
           <Info label="HQ Level" value={member.hqLevel.toString()} />
         </View>
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Daily History</Text>
 
-          {memberDailyStats.length === 0 ? (
-            <Text style={styles.notes}>No daily stats recorded yet.</Text>
-          ) : (
-            memberDailyStats.map((stat) => (
-              <View key={stat.id} style={styles.historyRow}>
-                <Text style={styles.historyDate}>{stat.date}</Text>
-                <Text style={styles.historyText}>
-                  VS: {formatCompactNumber(stat.weeklyVs)}
-                </Text>
-                <Text style={styles.historyText}>
-                  Donations: {formatNumber(stat.donations)}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.username}>{member.username}</Text>
-          <Text style={styles.meta}>
-            {member.rank} · HQ {member.hqLevel} · {member.mainSquad}
-          </Text>
+        <View style={styles.grid}>
+          <Info
+            label="Weekly VS"
+            value={formatCompactNumber(member.weeklyVsScore)}
+          />
+          <Info
+            label="Donations"
+            value={formatNumber(member.weeklyDonations)}
+          />
         </View>
 
         <View style={styles.card}>
@@ -140,17 +106,19 @@ export function MemberDetailScreen() {
             {member.notes?.trim() || "No notes yet."}
           </Text>
         </View>
+
         <AppButton
-          title="Update Daily Stats"
+          title="View Stats"
           onPress={() =>
             router.push({
-              pathname: "/members/stats",
+              pathname: "../members/stats",
               params: {
                 memberId: member.id,
               },
             })
           }
         />
+
         <AppButton
           title="Edit Member"
           onPress={() =>
@@ -169,7 +137,7 @@ export function MemberDetailScreen() {
           onPress={confirmDelete}
         />
       </ScrollView>
-    </>
+    </RequireActiveAlliance>
   );
 }
 

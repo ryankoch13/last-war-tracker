@@ -1,16 +1,105 @@
-import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { TopMemberStatsCard } from "@/components/TopMemberStatsCards";
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { getAllianceEvents } from "@/lib/allianceEvents";
+import { getTrainAssignments } from "@/lib/trainAssignments";
+import { getAllianceMembers } from "@/services/allianceMembers";
+import { AllianceMember } from "@/types/alliance";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
 import { formatCompactNumber, formatDateTime } from "../utils/format";
 
+type DashboardMember = {
+  id: string;
+  username?: string;
+  name?: string;
+  power: number;
+  weeklyVsScore: number;
+  weeklyDonations: number;
+};
+
+type DashboardEvent = {
+  id: string;
+  title: string;
+  type: string;
+  startsAt: string;
+};
+
+type DashboardTrain = {
+  id: string;
+  trainName: string;
+  departureTime: string;
+  guardIds: string[];
+  passengerIds: string[];
+};
+
 export function DashboardScreen() {
-  const members = useAllianceStore((state) => state.members);
-  const events = useAllianceStore((state) => state.events);
-  const trains = useAllianceStore((state) => state.trains);
+  const alliance = useAllianceStore((state) => state.alliance);
+  const activeAllianceId = alliance?.id ?? null;
+
+  const [members, setMembers] = useState<AllianceMember[]>([]);
+  const [events, setEvents] = useState<DashboardEvent[]>([]);
+  const [trains, setTrains] = useState<DashboardTrain[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!activeAllianceId) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      try {
+        setLoading(true);
+        setErrorMessage("");
+
+        const [loadedMembers, loadedEvents, loadedTrains] = await Promise.all([
+          getAllianceMembers(activeAllianceId),
+          getAllianceEvents(activeAllianceId),
+          getTrainAssignments(activeAllianceId),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMembers(loadedMembers ?? []);
+        setEvents(loadedEvents ?? []);
+        setTrains(loadedTrains ?? []);
+      } catch (error) {
+        console.error("DASHBOARD LOAD ERROR:", error);
+
+        if (isMounted) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not load dashboard data.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeAllianceId]);
+
   const topVsMember = useMemo(() => {
     return [...members].sort((a, b) => b.weeklyVsScore - a.weeklyVsScore)[0];
   }, [members]);
@@ -28,69 +117,93 @@ export function DashboardScreen() {
   const totalPower = members.reduce((sum, member) => sum + member.power, 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View>
-        <Text style={styles.title}>Alliance Ops</Text>
-        <Text style={styles.subtitle}>
-          Roster, train, and event management for strategy game alliances.
-        </Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.container}>
-        <TopMemberStatsCard />
-      </ScrollView>
-      <View style={styles.grid}>
-        <StatCard
-          label="Top VS"
-          value={topVsMember?.username ?? "—"}
-          helper={
-            topVsMember
-              ? formatCompactNumber(topVsMember.weeklyVsScore)
-              : "Load demo data"
-          }
-        />
-        <StatCard
-          label="Low Donations"
-          value={lowDonationMembers.length}
-          helper="Under 30k this week"
-        />
-      </View>
+    <RequireActiveAlliance>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View>
+          <Text style={styles.title}>Alliance Ops</Text>
+          <Text style={styles.subtitle}>
+            Roster, train, and event management for strategy game alliances.
+          </Text>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Next Event</Text>
-
-        {nextEvent ? (
-          <View style={styles.panel}>
-            <Text style={styles.panelTitle}>{nextEvent.name}</Text>
-            <Text style={styles.panelText}>{nextEvent.type}</Text>
-            <Text style={styles.panelText}>
-              Starts {formatDateTime(nextEvent.date)}
-            </Text>
+        {loading ? (
+          <View style={styles.loadingPanel}>
+            <ActivityIndicator />
+            <Text style={styles.emptyText}>Loading dashboard...</Text>
           </View>
-        ) : (
-          <Text style={styles.emptyText}>No upcoming events yet.</Text>
-        )}
-      </View>
+        ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Train Snapshot</Text>
+        {errorMessage ? (
+          <View style={styles.panel}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
 
-        {trains.length > 0 ? (
-          trains.map((train) => (
-            <View key={train.id} style={styles.panel}>
-              <Text style={styles.panelTitle}>{train.name}</Text>
+        <View style={styles.grid}>
+          <StatCard label="Members" value={members.length} />
+          <StatCard
+            label="Total Power"
+            value={formatCompactNumber(totalPower)}
+          />
+        </View>
+
+        <View style={styles.grid}>
+          <StatCard
+            label="Top VS"
+            value={topVsMember?.username ?? topVsMember?.name ?? "—"}
+            helper={
+              topVsMember
+                ? formatCompactNumber(topVsMember.weeklyVsScore)
+                : "No VS data yet"
+            }
+          />
+          <StatCard
+            label="Low Donations"
+            value={lowDonationMembers.length}
+            helper="Under 30k this week"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Next Event</Text>
+
+          {nextEvent ? (
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>{nextEvent.title}</Text>
+              <Text style={styles.panelText}>{nextEvent.type}</Text>
               <Text style={styles.panelText}>
-                Departure: {formatDateTime(train.date)}
-              </Text>
-              <Text style={styles.panelText}>
-                Assigned: {train.guardIds.length + train.passengerIds.length}
+                Starts {formatDateTime(nextEvent.startsAt)}
               </Text>
             </View>
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No train assignments yet.</Text>
-        )}
-      </View>
-    </ScrollView>
+          ) : (
+            <Text style={styles.emptyText}>No upcoming events yet.</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Train Snapshot</Text>
+
+          {trains.length > 0 ? (
+            trains.map((train) => (
+              <View key={train.id} style={styles.panel}>
+                <Text style={styles.panelTitle}>{train.trainName}</Text>
+                <Text style={styles.panelText}>
+                  Departure: {formatDateTime(train.departureTime)}
+                </Text>
+                <Text style={styles.panelText}>
+                  Assigned: {train.guardIds.length + train.passengerIds.length}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No train assignments yet.</Text>
+          )}
+        </View>
+      </ScrollView>
+    </RequireActiveAlliance>
   );
 }
 
@@ -113,9 +226,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 20,
   },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
+  loadingPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 8,
+    alignItems: "center",
   },
   grid: {
     flexDirection: "row",
@@ -147,5 +265,9 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: colors.muted,
+  },
+  errorText: {
+    color: "#DC2626",
+    fontWeight: "700",
   },
 });

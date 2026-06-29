@@ -1,23 +1,23 @@
 import { Stack } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 import type {
-    AllianceEvent,
-    AllianceEventType,
-    AllianceMember,
+  AllianceEvent,
+  AllianceEventType,
+  AllianceMember,
 } from "../../types/alliance";
 
 const eventTypes: AllianceEventType[] = [
@@ -33,15 +33,22 @@ function getTodayDateKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getMemberNames(members: AllianceMember[], memberIds: string[]) {
-  if (memberIds.length === 0) return "None assigned";
+function getMemberNames(
+  members: AllianceMember[] = [],
+  memberIds: string[] = [],
+) {
+  if (memberIds.length === 0) {
+    return "None assigned";
+  }
 
-  return memberIds
+  const names = memberIds
     .map((memberId) => {
       return members.find((member) => member.id === memberId)?.username;
     })
     .filter(Boolean)
     .join(", ");
+
+  return names || "None assigned";
 }
 
 type EventFormState = {
@@ -65,8 +72,8 @@ export function EventBoardScreen() {
     null,
   );
 
-  const members = useAllianceStore((state) => state.members);
-  const events = useAllianceStore((state) => state.events);
+  const members = useAllianceStore((state) => state.members ?? []);
+  const events = useAllianceStore((state) => state.events ?? []);
 
   const addAllianceEvent = useAllianceStore((state) => state.addAllianceEvent);
   const updateAllianceEvent = useAllianceStore(
@@ -86,7 +93,9 @@ export function EventBoardScreen() {
     return events
       .filter((event) => event.status !== "completed")
       .slice()
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => {
+        return (a.date ?? "").localeCompare(b.date ?? "");
+      });
   }, [events]);
 
   const completedEvents = useMemo(() => {
@@ -94,16 +103,27 @@ export function EventBoardScreen() {
       .filter((event) => event.status === "completed")
       .slice()
       .sort((a, b) => {
-        const aDate = a.completedAt ?? a.date;
-        const bDate = b.completedAt ?? b.date;
+        const aDate = a.completedAt ?? a.date ?? "";
+        const bDate = b.completedAt ?? b.date ?? "";
+
         return bDate.localeCompare(aDate);
       });
   }, [events]);
 
   const selectedPickerEvent = useMemo(() => {
-    if (!memberPickerEventId) return undefined;
+    if (!memberPickerEventId) {
+      return undefined;
+    }
+
     return events.find((event) => event.id === memberPickerEventId);
   }, [events, memberPickerEventId]);
+
+  function showMissingEventStoreAction() {
+    Alert.alert(
+      "Events are not connected",
+      "The event board loaded, but the event actions are missing from allianceStore.ts.",
+    );
+  }
 
   function openCreateEvent() {
     setEventForm({
@@ -123,7 +143,9 @@ export function EventBoardScreen() {
   }
 
   function saveEventForm() {
-    if (!eventForm) return;
+    if (!eventForm) {
+      return;
+    }
 
     const trimmedName = eventForm.name.trim();
 
@@ -132,19 +154,32 @@ export function EventBoardScreen() {
       return;
     }
 
+    const date = eventForm.date.trim() || getTodayDateKey();
+    const notes = eventForm.notes.trim();
+
     if (eventForm.id) {
+      if (typeof updateAllianceEvent !== "function") {
+        showMissingEventStoreAction();
+        return;
+      }
+
       updateAllianceEvent(eventForm.id, {
         name: trimmedName,
         type: eventForm.type,
-        date: eventForm.date.trim() || getTodayDateKey(),
-        notes: eventForm.notes.trim(),
+        date,
+        notes,
       });
     } else {
+      if (typeof addAllianceEvent !== "function") {
+        showMissingEventStoreAction();
+        return;
+      }
+
       addAllianceEvent({
         name: trimmedName,
         type: eventForm.type,
-        date: eventForm.date.trim() || getTodayDateKey(),
-        notes: eventForm.notes.trim(),
+        date,
+        notes,
       });
     }
 
@@ -162,7 +197,14 @@ export function EventBoardScreen() {
         },
         {
           text: "Complete",
-          onPress: () => completeAllianceEvent(event.id),
+          onPress: () => {
+            if (typeof completeAllianceEvent !== "function") {
+              showMissingEventStoreAction();
+              return;
+            }
+
+            completeAllianceEvent(event.id);
+          },
         },
       ],
     );
@@ -177,20 +219,44 @@ export function EventBoardScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => deleteAllianceEvent(event.id),
+        onPress: () => {
+          if (typeof deleteAllianceEvent !== "function") {
+            showMissingEventStoreAction();
+            return;
+          }
+
+          deleteAllianceEvent(event.id);
+        },
       },
     ]);
   }
 
-  function toggleAssignedMember(memberId: string) {
-    if (!selectedPickerEvent) return;
+  function reopenEvent(eventId: string) {
+    if (typeof reopenAllianceEvent !== "function") {
+      showMissingEventStoreAction();
+      return;
+    }
 
-    const isAssigned = selectedPickerEvent.assignedMemberIds.includes(memberId);
+    reopenAllianceEvent(eventId);
+  }
+
+  function toggleAssignedMember(memberId: string) {
+    if (!selectedPickerEvent) {
+      return;
+    }
+
+    if (typeof updateAllianceEvent !== "function") {
+      showMissingEventStoreAction();
+      return;
+    }
+
+    const assignedMemberIds = selectedPickerEvent.assignedMemberIds ?? [];
+    const isAssigned = assignedMemberIds.includes(memberId);
 
     updateAllianceEvent(selectedPickerEvent.id, {
       assignedMemberIds: isAssigned
-        ? selectedPickerEvent.assignedMemberIds.filter((id) => id !== memberId)
-        : [...selectedPickerEvent.assignedMemberIds, memberId],
+        ? assignedMemberIds.filter((id) => id !== memberId)
+        : [...assignedMemberIds, memberId],
     });
   }
 
@@ -257,7 +323,7 @@ export function EventBoardScreen() {
                 key={event.id}
                 event={event}
                 members={members}
-                onReopen={() => reopenAllianceEvent(event.id)}
+                onReopen={() => reopenEvent(event.id)}
                 onDelete={() => confirmDeleteEvent(event)}
               />
             ))
@@ -398,32 +464,43 @@ export function EventBoardScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.memberList}>
-              {members.map((member) => {
-                const selected =
-                  selectedPickerEvent?.assignedMemberIds.includes(member.id) ??
-                  false;
+              {members.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyText}>
+                    No members available yet.
+                  </Text>
+                </View>
+              ) : (
+                members.map((member) => {
+                  const assignedMemberIds =
+                    selectedPickerEvent?.assignedMemberIds ?? [];
 
-                return (
-                  <Pressable
-                    key={member.id}
-                    onPress={() => toggleAssignedMember(member.id)}
-                    style={({ pressed }) => [
-                      styles.memberRow,
-                      selected && styles.memberRowSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View>
-                      <Text style={styles.memberName}>{member.username}</Text>
-                      <Text style={styles.memberMeta}>
-                        {member.rank} · HQ {member.hqLevel}
+                  const selected = assignedMemberIds.includes(member.id);
+
+                  return (
+                    <Pressable
+                      key={member.id}
+                      onPress={() => toggleAssignedMember(member.id)}
+                      style={({ pressed }) => [
+                        styles.memberRow,
+                        selected && styles.memberRowSelected,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <View>
+                        <Text style={styles.memberName}>{member.username}</Text>
+                        <Text style={styles.memberMeta}>
+                          {member.rank} · HQ {member.hqLevel}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.checkmark}>
+                        {selected ? "✓" : ""}
                       </Text>
-                    </View>
-
-                    <Text style={styles.checkmark}>{selected ? "✓" : ""}</Text>
-                  </Pressable>
-                );
-              })}
+                    </Pressable>
+                  );
+                })
+              )}
             </ScrollView>
           </View>
         </View>
@@ -447,6 +524,8 @@ function EventCard({
   onComplete: () => void;
   onDelete: () => void;
 }) {
+  const assignedMemberIds = event.assignedMemberIds ?? [];
+
   return (
     <View style={styles.card}>
       <View>
@@ -459,7 +538,7 @@ function EventCard({
       <View style={styles.assignmentBox}>
         <Text style={styles.assignmentLabel}>Assigned Members</Text>
         <Text style={styles.assignmentValue}>
-          {getMemberNames(members, event.assignedMemberIds)}
+          {getMemberNames(members, assignedMemberIds)}
         </Text>
       </View>
 
@@ -491,6 +570,8 @@ function HistoryEventCard({
   onReopen: () => void;
   onDelete: () => void;
 }) {
+  const assignedMemberIds = event.assignedMemberIds ?? [];
+
   return (
     <View style={styles.card}>
       <View>
@@ -501,7 +582,7 @@ function HistoryEventCard({
       </View>
 
       <Text style={styles.historyText}>
-        Assigned: {getMemberNames(members, event.assignedMemberIds)}
+        Assigned: {getMemberNames(members, assignedMemberIds)}
       </Text>
 
       {!!event.notes?.trim() && (

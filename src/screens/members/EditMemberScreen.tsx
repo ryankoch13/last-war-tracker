@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from "react";
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
 } from "react-native";
 
+import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
@@ -95,72 +96,74 @@ export function EditMemberScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboard}
-      behavior={Platform.select({
-        ios: "padding",
-        android: undefined,
-      })}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+    <RequireActiveAlliance>
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.select({
+          ios: "padding",
+          android: undefined,
+        })}
       >
-        <Field label="Username" value={username} onChangeText={setUsername} />
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Field label="Username" value={username} onChangeText={setUsername} />
 
-        <Field
-          label="Rank"
-          value={rank}
-          onChangeText={(value) => setRank(value as AllianceRank)}
-        />
-        <Text style={styles.helper}>Use R1, R2, R3, R4, or R5.</Text>
+          <Field
+            label="Rank"
+            value={rank}
+            onChangeText={(value) => setRank(value as AllianceRank)}
+          />
+          <Text style={styles.helper}>Use R1, R2, R3, R4, or R5.</Text>
 
-        <Field
-          label="Power"
-          value={power}
-          onChangeText={setPower}
-          keyboardType="number-pad"
-        />
+          <Field
+            label="Power"
+            value={power}
+            onChangeText={setPower}
+            keyboardType="number-pad"
+          />
 
-        <Field
-          label="HQ Level"
-          value={hqLevel}
-          onChangeText={setHqLevel}
-          keyboardType="number-pad"
-        />
+          <Field
+            label="HQ Level"
+            value={hqLevel}
+            onChangeText={setHqLevel}
+            keyboardType="number-pad"
+          />
 
-        <Field
-          label="Main Squad"
-          value={mainSquad}
-          onChangeText={(value) => setMainSquad(value as SquadType)}
-        />
-        <Text style={styles.helper}>Use Tank, Air, Missile, or Mixed.</Text>
+          <Field
+            label="Main Squad"
+            value={mainSquad}
+            onChangeText={(value) => setMainSquad(value as SquadType)}
+          />
+          <Text style={styles.helper}>Use Tank, Air, Missile, or Mixed.</Text>
 
-        <Field
-          label="Weekly VS Score"
-          value={weeklyVsScore}
-          onChangeText={setWeeklyVsScore}
-          keyboardType="number-pad"
-        />
+          <Field
+            label="Weekly VS Score"
+            value={weeklyVsScore}
+            onChangeText={setWeeklyVsScore}
+            keyboardType="number-pad"
+          />
 
-        <Field
-          label="Weekly Donations"
-          value={weeklyDonations}
-          onChangeText={setWeeklyDonations}
-          keyboardType="number-pad"
-        />
+          <Field
+            label="Weekly Donations"
+            value={weeklyDonations}
+            onChangeText={setWeeklyDonations}
+            keyboardType="number-pad"
+          />
 
-        <Field
-          label="R4 Notes"
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-        />
+          <Field
+            label="R4 Notes"
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+          />
 
-        <AppButton title={title} onPress={save} />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <AppButton title={title} onPress={save} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </RequireActiveAlliance>
   );
 }
 

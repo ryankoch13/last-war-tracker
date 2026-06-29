@@ -1,345 +1,514 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
-import { demoEvents, demoMembers, demoTrains } from "../data/demoAlliance";
-import type {
-  AllianceEvent,
-  AllianceMember,
-  DailyMemberStat,
-  TrainAssignment,
-} from "../types/alliance";
-import { createId } from "../utils/createId";
+import { supabase } from "@/lib/supabase";
+import type { AllianceEvent, AllianceMember } from "@/types/alliance";
 
-type AllianceState = {
+export type AllianceRole = "r1" | "r2" | "r3" | "r4" | "r5";
+
+export type Alliance = {
+  id: string;
+  name: string;
+  invite_code: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type AllianceUser = {
+  id: string;
+  alliance_id: string;
+  user_id: string;
+  role: AllianceRole;
+  created_at: string;
+};
+
+export type DailyMemberStat = {
+  id: string;
+  memberId: string;
+  date: string;
+  versusPoints: number;
+  donations: number;
+  notes?: string;
+};
+
+type AllianceMemberInput = Omit<AllianceMember, "id">;
+
+type AllianceEventInput = {
+  name: string;
+  type: AllianceEvent["type"];
+  date: string;
+  notes?: string;
+};
+
+type AllianceStore = {
+  activeAllianceId: string | null;
+  activeAlliance: Alliance | null;
+  allianceUser: AllianceUser | null;
+  loading: boolean;
+  error: string | null;
+
   members: AllianceMember[];
   events: AllianceEvent[];
-  trains: TrainAssignment[];
   dailyStats: DailyMemberStat[];
 
-  loadDemoData: () => void;
-  clearAllData: () => void;
+  loadActiveAlliance: () => Promise<void>;
+  createAllianceAndMember: (
+    allianceName: string,
+    memberName: string,
+  ) => Promise<void>;
+  joinAllianceByInviteCode: (
+    inviteCode: string,
+    memberName: string,
+  ) => Promise<void>;
+  clearAlliance: () => void;
 
-  addMember: (member: Omit<AllianceMember, "id">) => void;
+  setMembers: (members: AllianceMember[]) => void;
+  addAllianceMember: (member: AllianceMemberInput) => void;
+  updateAllianceMember: (
+    memberId: string,
+    updates: Partial<AllianceMember>,
+  ) => void;
+  deleteAllianceMember: (memberId: string) => void;
+
+  // Aliases in case older screens use these names.
+  addMember: (member: AllianceMemberInput) => void;
   updateMember: (memberId: string, updates: Partial<AllianceMember>) => void;
   deleteMember: (memberId: string) => void;
 
-  upsertDailyStat: (
-    memberId: string,
-    date: string,
-    updates: Partial<Pick<DailyMemberStat, "weeklyVs" | "donations">>,
-  ) => void;
-
-  deleteDailyStat: (statId: string) => void;
-
-  getMemberById: (memberId: string) => AllianceMember | undefined;
-  getDailyStatsByMemberId: (memberId: string) => DailyMemberStat[];
-  addTrainAssignment: () => void;
-  updateTrainAssignment: (
-    trainId: string,
-    updates: Partial<TrainAssignment>,
-  ) => void;
-  completeTrainAssignment: (trainId: string) => void;
-  reopenTrainAssignment: (trainId: string) => void;
-  deleteTrainAssignment: (trainId: string) => void;
-  addAllianceEvent: (event: {
-    name: string;
-    type: AllianceEvent["type"];
-    date: string;
-    notes?: string;
-    assignedMemberIds?: string[];
-  }) => void;
-
+  setEvents: (events: AllianceEvent[]) => void;
+  addAllianceEvent: (event: AllianceEventInput) => void;
   updateAllianceEvent: (
     eventId: string,
     updates: Partial<AllianceEvent>,
   ) => void;
-
   completeAllianceEvent: (eventId: string) => void;
   reopenAllianceEvent: (eventId: string) => void;
   deleteAllianceEvent: (eventId: string) => void;
+
+  setDailyStats: (dailyStats: DailyMemberStat[]) => void;
+  addDailyStat: (stat: Omit<DailyMemberStat, "id">) => void;
+  updateDailyStat: (statId: string, updates: Partial<DailyMemberStat>) => void;
+  deleteDailyStat: (statId: string) => void;
 };
 
-export const useAllianceStore = create<AllianceState>()(
-  persist(
-    (set, get) => ({
+function generateInviteCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function generateLocalId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getTodayDateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export const useAllianceStore = create<AllianceStore>((set, get) => ({
+  activeAllianceId: null,
+  activeAlliance: null,
+  allianceUser: null,
+  loading: false,
+  error: null,
+
+  members: [],
+  events: [],
+  dailyStats: [],
+
+  loadActiveAlliance: async () => {
+    set({ loading: true, error: null });
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        set({
+          activeAllianceId: null,
+          activeAlliance: null,
+          allianceUser: null,
+          loading: false,
+          error: null,
+        });
+        return;
+      }
+
+      const { data: allianceUsers, error: allianceUserError } = await supabase
+        .from("alliance_users")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (allianceUserError) {
+        throw allianceUserError;
+      }
+
+      const allianceUser = allianceUsers?.[0];
+
+      if (!allianceUser) {
+        set({
+          activeAllianceId: null,
+          activeAlliance: null,
+          allianceUser: null,
+          loading: false,
+          error: null,
+        });
+        return;
+      }
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .select("*")
+        .eq("id", allianceUser.alliance_id)
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
+      }
+
+      set({
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("LOAD ACTIVE ALLIANCE ERROR:", error);
+
+      set({
+        activeAllianceId: null,
+        activeAlliance: null,
+        allianceUser: null,
+        loading: false,
+        error: "Could not load active alliance.",
+      });
+    }
+  },
+
+  createAllianceAndMember: async (allianceName: string, memberName: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const trimmedAllianceName = allianceName.trim();
+      const trimmedMemberName = memberName.trim();
+
+      if (!trimmedAllianceName) {
+        throw new Error("Alliance name is required.");
+      }
+
+      if (!trimmedMemberName) {
+        throw new Error("Member name is required.");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("You must be logged in to create an alliance.");
+      }
+
+      const inviteCode = generateInviteCode();
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .insert({
+          name: trimmedAllianceName,
+          invite_code: inviteCode,
+          created_by: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
+      }
+
+      const { data: allianceUser, error: allianceUserError } = await supabase
+        .from("alliance_users")
+        .insert({
+          alliance_id: alliance.id,
+          user_id: user.id,
+          role: "r5",
+        })
+        .select("*")
+        .single();
+
+      if (allianceUserError) {
+        throw allianceUserError;
+      }
+
+      set({
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("CREATE ALLIANCE ERROR:", error);
+
+      set({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : "Could not create alliance.",
+      });
+
+      throw error;
+    }
+  },
+
+  joinAllianceByInviteCode: async (inviteCode: string, memberName: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const trimmedInviteCode = inviteCode.trim().toUpperCase();
+      const trimmedMemberName = memberName.trim();
+
+      if (!trimmedInviteCode) {
+        throw new Error("Invite code is required.");
+      }
+
+      if (!trimmedMemberName) {
+        throw new Error("Member name is required.");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("You must be logged in to join an alliance.");
+      }
+
+      const { data: alliance, error: allianceError } = await supabase
+        .from("alliances")
+        .select("*")
+        .eq("invite_code", trimmedInviteCode)
+        .single();
+
+      if (allianceError) {
+        throw allianceError;
+      }
+
+      const { data: allianceUser, error: allianceUserError } = await supabase
+        .from("alliance_users")
+        .insert({
+          alliance_id: alliance.id,
+          user_id: user.id,
+          role: "r1",
+        })
+        .select("*")
+        .single();
+
+      if (allianceUserError) {
+        throw allianceUserError;
+      }
+
+      set({
+        activeAllianceId: alliance.id,
+        activeAlliance: alliance,
+        allianceUser,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("JOIN ALLIANCE ERROR:", error);
+
+      set({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : "Could not join alliance.",
+      });
+
+      throw error;
+    }
+  },
+
+  clearAlliance: () => {
+    set({
+      activeAllianceId: null,
+      activeAlliance: null,
+      allianceUser: null,
+      loading: false,
+      error: null,
       members: [],
       events: [],
-      trains: [],
       dailyStats: [],
+    });
+  },
 
-      loadDemoData: () => {
-        set({
-          members: demoMembers,
-          events: demoEvents,
-          trains: demoTrains,
-          dailyStats: [],
-        });
-      },
+  setMembers: (members: AllianceMember[]) => {
+    set({ members });
+  },
 
-      clearAllData: () => {
-        set({
-          members: [],
-          events: [],
-          trains: [],
-          dailyStats: [],
-        });
-      },
+  addAllianceMember: (member: AllianceMemberInput) => {
+    const newMember = {
+      id: generateLocalId("member"),
+      ...member,
+    } as AllianceMember;
 
-      addMember: (member) => {
-        const newMember: AllianceMember = {
-          ...member,
-          id: createId("member"),
-        };
+    set((state) => ({
+      members: [...state.members, newMember],
+    }));
+  },
 
-        set((state) => ({
-          members: [...state.members, newMember],
-        }));
-      },
+  updateAllianceMember: (
+    memberId: string,
+    updates: Partial<AllianceMember>,
+  ) => {
+    set((state) => ({
+      members: state.members.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              ...updates,
+            }
+          : member,
+      ),
+    }));
+  },
 
-      updateMember: (memberId, updates) => {
-        set((state) => ({
-          members: state.members.map((member) =>
-            member.id === memberId
-              ? {
-                  ...member,
-                  ...updates,
-                }
-              : member,
-          ),
-        }));
-      },
+  deleteAllianceMember: (memberId: string) => {
+    set((state) => ({
+      members: state.members.filter((member) => member.id !== memberId),
+      dailyStats: state.dailyStats.filter((stat) => stat.memberId !== memberId),
+      events: state.events.map((event) => ({
+        ...event,
+        assignedMemberIds: (event.assignedMemberIds ?? []).filter(
+          (assignedMemberId) => assignedMemberId !== memberId,
+        ),
+      })),
+    }));
+  },
 
-      deleteMember: (memberId) => {
-        set((state) => ({
-          members: state.members.filter((member) => member.id !== memberId),
+  addMember: (member: AllianceMemberInput) => {
+    get().addAllianceMember(member);
+  },
 
-          dailyStats: state.dailyStats.filter(
-            (stat) => stat.memberId !== memberId,
-          ),
+  updateMember: (memberId: string, updates: Partial<AllianceMember>) => {
+    get().updateAllianceMember(memberId, updates);
+  },
 
-          events: state.events.map((event) => ({
-            ...event,
-            assignedMemberIds: event.assignedMemberIds.filter(
-              (id) => id !== memberId,
-            ),
-          })),
+  deleteMember: (memberId: string) => {
+    get().deleteAllianceMember(memberId);
+  },
 
-          trains: state.trains.map((train) => ({
-            ...train,
-            conductorId:
-              train.conductorId === memberId ? undefined : train.conductorId,
-            guardIds: train.guardIds.filter((id) => id !== memberId),
-            passengerIds: train.passengerIds.filter((id) => id !== memberId),
-          })),
-        }));
-      },
+  setEvents: (events: AllianceEvent[]) => {
+    set({ events });
+  },
 
-      upsertDailyStat: (memberId, date, updates) => {
-        set((state) => {
-          const existingStat = state.dailyStats.find(
-            (stat) => stat.memberId === memberId && stat.date === date,
-          );
+  addAllianceEvent: (event: AllianceEventInput) => {
+    const newEvent = {
+      id: generateLocalId("event"),
+      name: event.name,
+      type: event.type,
+      date: event.date || getTodayDateKey(),
+      notes: event.notes ?? "",
+      status: "active",
+      assignedMemberIds: [],
+      completedAt: undefined,
+    } as AllianceEvent;
 
-          if (existingStat) {
-            return {
-              dailyStats: state.dailyStats.map((stat) =>
-                stat.id === existingStat.id
-                  ? {
-                      ...stat,
-                      ...updates,
-                    }
-                  : stat,
-              ),
-            };
-          }
+    set((state) => ({
+      events: [...state.events, newEvent],
+    }));
+  },
 
-          return {
-            dailyStats: [
-              ...state.dailyStats,
-              {
-                id: createId("daily-stat"),
-                memberId,
-                date,
-                weeklyVs: updates.weeklyVs ?? 0,
-                donations: updates.donations ?? 0,
-              },
-            ],
-          };
-        });
-      },
+  updateAllianceEvent: (eventId: string, updates: Partial<AllianceEvent>) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              ...updates,
+            }
+          : event,
+      ),
+    }));
+  },
 
-      deleteDailyStat: (statId) => {
-        set((state) => ({
-          dailyStats: state.dailyStats.filter((stat) => stat.id !== statId),
-        }));
-      },
+  completeAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              status: "completed",
+              completedAt: getTodayDateKey(),
+            }
+          : event,
+      ),
+    }));
+  },
 
-      getMemberById: (memberId) => {
-        return get().members.find((member) => member.id === memberId);
-      },
-
-      getDailyStatsByMemberId: (memberId) => {
-        return get()
-          .dailyStats.filter((stat) => stat.memberId === memberId)
-          .sort((a, b) => b.date.localeCompare(a.date));
-      },
-      addTrainAssignment: () => {
-        const today = new Date().toISOString().slice(0, 10);
-
-        set((state) => ({
-          trains: [
-            ...state.trains,
-            {
-              id: createId("train"),
-              name: `Train ${state.trains.length + 1}`,
-              date: today,
+  reopenAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
               status: "active",
-              guardIds: [],
-              passengerIds: [],
-            },
-          ],
-        }));
-      },
+              completedAt: undefined,
+            }
+          : event,
+      ),
+    }));
+  },
 
-      updateTrainAssignment: (trainId, updates) => {
-        set((state) => ({
-          trains: state.trains.map((train) =>
-            train.id === trainId
-              ? {
-                  ...train,
-                  ...updates,
-                }
-              : train,
-          ),
-        }));
-      },
+  deleteAllianceEvent: (eventId: string) => {
+    set((state) => ({
+      events: state.events.filter((event) => event.id !== eventId),
+    }));
+  },
 
-      completeTrainAssignment: (trainId) => {
-        const today = new Date().toISOString().slice(0, 10);
+  setDailyStats: (dailyStats: DailyMemberStat[]) => {
+    set({ dailyStats });
+  },
 
-        set((state) => ({
-          trains: state.trains.map((train) =>
-            train.id === trainId
-              ? {
-                  ...train,
-                  status: "completed",
-                  completedAt: today,
-                }
-              : train,
-          ),
-        }));
-      },
+  addDailyStat: (stat: Omit<DailyMemberStat, "id">) => {
+    const newStat: DailyMemberStat = {
+      id: generateLocalId("daily_stat"),
+      ...stat,
+    };
 
-      reopenTrainAssignment: (trainId) => {
-        set((state) => ({
-          trains: state.trains.map((train) =>
-            train.id === trainId
-              ? {
-                  ...train,
-                  status: "active",
-                  completedAt: undefined,
-                }
-              : train,
-          ),
-        }));
-      },
+    set((state) => ({
+      dailyStats: [...state.dailyStats, newStat],
+    }));
+  },
 
-      deleteTrainAssignment: (trainId) => {
-        set((state) => ({
-          trains: state.trains.filter((train) => train.id !== trainId),
-        }));
-      },
-      addAllianceEvent: (event) => {
-        set((state) => ({
-          events: [
-            ...state.events,
-            {
-              id: createId("event"),
-              name: event.name,
-              type: event.type,
-              date: event.date,
-              notes: event.notes,
-              assignedMemberIds: event.assignedMemberIds ?? [],
-              status: "active",
-            },
-          ],
-        }));
-      },
+  updateDailyStat: (statId: string, updates: Partial<DailyMemberStat>) => {
+    set((state) => ({
+      dailyStats: state.dailyStats.map((stat) =>
+        stat.id === statId
+          ? {
+              ...stat,
+              ...updates,
+            }
+          : stat,
+      ),
+    }));
+  },
 
-      updateAllianceEvent: (eventId, updates) => {
-        set((state) => ({
-          events: state.events.map((event) =>
-            event.id === eventId
-              ? {
-                  ...event,
-                  ...updates,
-                }
-              : event,
-          ),
-        }));
-      },
-
-      completeAllianceEvent: (eventId) => {
-        const today = new Date().toISOString().slice(0, 10);
-
-        set((state) => ({
-          events: state.events.map((event) =>
-            event.id === eventId
-              ? {
-                  ...event,
-                  status: "completed",
-                  completedAt: today,
-                }
-              : event,
-          ),
-        }));
-      },
-
-      reopenAllianceEvent: (eventId) => {
-        set((state) => ({
-          events: state.events.map((event) =>
-            event.id === eventId
-              ? {
-                  ...event,
-                  status: "active",
-                  completedAt: undefined,
-                }
-              : event,
-          ),
-        }));
-      },
-
-      deleteAllianceEvent: (eventId) => {
-        set((state) => ({
-          events: state.events.filter((event) => event.id !== eventId),
-        }));
-      },
-    }),
-
-    {
-      name: "alliance-ops-store",
-      storage: createJSONStorage(() => AsyncStorage),
-
-      version: 2,
-
-      migrate: (persistedState) => {
-        const state = persistedState as Partial<AllianceState>;
-
-        return {
-          members: state.members ?? [],
-          events: state.events ?? [],
-          trains: state.trains ?? [],
-          dailyStats: state.dailyStats ?? [],
-        };
-      },
-
-      partialize: (state) => ({
-        members: state.members,
-        events: state.events,
-        trains: state.trains,
-        dailyStats: state.dailyStats,
-      }),
-    },
-  ),
-);
+  deleteDailyStat: (statId: string) => {
+    set((state) => ({
+      dailyStats: state.dailyStats.filter((stat) => stat.id !== statId),
+    }));
+  },
+}));
