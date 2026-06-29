@@ -9,7 +9,7 @@ export type DailyMemberStats = {
   member_id: string;
   date: string;
   donations: number;
-  versus_points: number;
+  vs_score: number;
   created_at?: string;
   updated_at?: string;
 };
@@ -56,7 +56,7 @@ export async function updateMyDailyStats({
         member_id: member.id,
         date,
         donations,
-        versus_points: versusPoints,
+        vs_score: versusPoints,
         updated_at: new Date().toISOString(),
       },
       {

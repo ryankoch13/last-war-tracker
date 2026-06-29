@@ -1,132 +1,24 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
-import { formatCompactNumber, formatNumber } from "../../utils/format";
 
-type MemberLike = {
-  id: string;
+const EDIT_MEMBER_ROUTE = "/(tabs)/members/edit" as const;
+const MEMBER_STATS_ROUTE = "/(tabs)/members/stats" as const;
+const ADD_DAILY_STATS_ROUTE = "/(tabs)/members/add-daily-stats" as const;
 
-  username?: string | null;
-  display_name?: string | null;
-  name?: string | null;
-
-  rank?: string | null;
-  role?: string | null;
-
-  hqLevel?: number | null;
-  hq_level?: number | null;
-  level?: number | null;
-
-  mainSquad?: string | null;
-  main_squad?: string | null;
-
-  power?: number | null;
-
-  weeklyVsScore?: number | null;
-  weekly_vs_score?: number | null;
-
-  weeklyDonations?: number | null;
-  weekly_donations?: number | null;
-
-  notes?: string | null;
-};
-
-type DailyStatLike = {
-  id?: string;
-
-  memberId?: string | null;
-  member_id?: string | null;
-
-  date?: string | null;
-
-  weeklyVs?: number | null;
-  weekly_vs?: number | null;
-  versus_score?: number | null;
-  vs_score?: number | null;
-
-  donations?: number | null;
-};
-
-type AllianceStoreWithRoster = {
-  members?: MemberLike[];
-  dailyStats?: DailyStatLike[];
-  deleteMember?: (memberId: string) => void | Promise<void>;
-};
-
-function getNumber(value: number | string | null | undefined) {
-  const numericValue = Number(value ?? 0);
-
-  if (!Number.isFinite(numericValue)) {
-    return 0;
-  }
-
-  return numericValue;
-}
-
-function getMemberDisplayName(member: MemberLike) {
-  return (
-    member.display_name?.trim() ||
-    member.username?.trim() ||
-    member.name?.trim() ||
-    "Unnamed Member"
-  );
-}
-
-function getMemberRole(member: MemberLike) {
-  return member.role || member.rank || "R1";
-}
-
-function getMemberLevel(member: MemberLike) {
-  return getNumber(member.level ?? member.hqLevel ?? member.hq_level);
-}
-
-function getMemberMainSquad(member: MemberLike) {
-  return member.mainSquad || member.main_squad || "No squad set";
-}
-
-function getMemberWeeklyVs(
-  member: MemberLike,
-  memberDailyStats: DailyStatLike[],
-) {
-  const memberValue = getNumber(member.weeklyVsScore ?? member.weekly_vs_score);
-
-  if (memberValue > 0) {
-    return memberValue;
-  }
-
-  return memberDailyStats.reduce((total, stat) => {
-    return (
-      total +
-      getNumber(
-        stat.weeklyVs ?? stat.weekly_vs ?? stat.versus_score ?? stat.vs_score,
-      )
-    );
-  }, 0);
-}
-
-function getMemberWeeklyDonations(
-  member: MemberLike,
-  memberDailyStats: DailyStatLike[],
-) {
-  const memberValue = getNumber(
-    member.weeklyDonations ?? member.weekly_donations,
-  );
-
-  if (memberValue > 0) {
-    return memberValue;
-  }
-
-  return memberDailyStats.reduce((total, stat) => {
-    return total + getNumber(stat.donations);
-  }, 0);
-}
-
-export function MemberDetailScreen() {
+export function MemberDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ memberId?: string | string[] }>();
 
@@ -134,83 +26,115 @@ export function MemberDetailScreen() {
     ? params.memberId[0]
     : params.memberId;
 
-  const members = useAllianceStore(
-    (state) => (state as AllianceStoreWithRoster).members ?? [],
-  );
-
-  const dailyStats = useAllianceStore(
-    (state) => (state as AllianceStoreWithRoster).dailyStats ?? [],
-  );
-
-  const deleteMember = useAllianceStore(
-    (state) => (state as AllianceStoreWithRoster).deleteMember,
-  );
+  const members = useAllianceStore((state) => state.members ?? []);
+  const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
+  const deleteMember = useAllianceStore((state) => state.deleteMember);
 
   const member = useMemo(() => {
-    if (!memberId) {
-      return undefined;
-    }
+    if (!memberId) return undefined;
 
     return members.find((item) => item.id === memberId);
   }, [members, memberId]);
 
   const memberDailyStats = useMemo(() => {
-    if (!memberId) {
-      return [];
-    }
+    if (!memberId) return [];
 
     return dailyStats
-      .filter((stat) => {
-        const statMemberId = stat.memberId ?? stat.member_id;
-        return statMemberId === memberId;
-      })
+      .filter((stat) => getStatMemberId(stat) === memberId)
       .slice()
-      .sort((a, b) => {
-        const dateA = a.date ?? "";
-        const dateB = b.date ?? "";
-
-        return dateB.localeCompare(dateA);
-      });
+      .sort((a, b) => getStatDate(b).localeCompare(getStatDate(a)));
   }, [dailyStats, memberId]);
 
-  const displayName = member ? getMemberDisplayName(member) : "";
-  const role = member ? getMemberRole(member) : "R1";
-  const level = member ? getMemberLevel(member) : 0;
-  const mainSquad = member ? getMemberMainSquad(member) : "No squad set";
-  const power = member ? getNumber(member.power) : 0;
+  const weeklyStats = useMemo(() => {
+    const { startDate, endDate } = getCurrentWeekRange();
 
-  const totalVs = useMemo(() => {
-    if (!member) {
-      return 0;
-    }
+    return memberDailyStats.reduce(
+      (totals, stat) => {
+        const date = getStatDate(stat);
 
-    return getMemberWeeklyVs(member, memberDailyStats);
-  }, [member, memberDailyStats]);
+        if (date < startDate || date > endDate) {
+          return totals;
+        }
 
-  const totalDonations = useMemo(() => {
-    if (!member) {
-      return 0;
-    }
-
-    return getMemberWeeklyDonations(member, memberDailyStats);
-  }, [member, memberDailyStats]);
-
-  if (!member) {
-    return (
-      <RequireActiveAlliance>
-        <View style={styles.center}>
-          <Text style={styles.title}>Member not found</Text>
-
-          <AppButton title="Go Back" onPress={() => router.back()} />
-        </View>
-      </RequireActiveAlliance>
+        return {
+          vsScore: totals.vsScore + getStatVsScore(stat),
+          donations: totals.donations + getStatDonations(stat),
+        };
+      },
+      {
+        vsScore: 0,
+        donations: 0,
+      },
     );
+  }, [memberDailyStats]);
+
+  const monthlyStats = useMemo(() => {
+    const { startDate, endDate } = getCurrentMonthRange();
+
+    return memberDailyStats.reduce(
+      (totals, stat) => {
+        const date = getStatDate(stat);
+
+        if (date < startDate || date > endDate) {
+          return totals;
+        }
+
+        return {
+          vsScore: totals.vsScore + getStatVsScore(stat),
+          donations: totals.donations + getStatDonations(stat),
+        };
+      },
+      {
+        vsScore: 0,
+        donations: 0,
+      },
+    );
+  }, [memberDailyStats]);
+
+  const recentStats = useMemo(() => {
+    return memberDailyStats.slice(0, 7);
+  }, [memberDailyStats]);
+
+  function goToEditMember() {
+    if (!memberId) return;
+
+    router.push({
+      pathname: EDIT_MEMBER_ROUTE,
+      params: {
+        memberId,
+      },
+    });
   }
 
-  function confirmDelete() {
+  function goToStats() {
+    if (!memberId) return;
+
+    router.push({
+      pathname: MEMBER_STATS_ROUTE,
+      params: {
+        memberId,
+      },
+    });
+  }
+
+  function goToAddDailyStats(date?: string) {
+    if (!memberId) return;
+
+    router.push({
+      pathname: ADD_DAILY_STATS_ROUTE,
+      params: {
+        memberId,
+        ...(date ? { date } : {}),
+      },
+    });
+  }
+
+  function confirmDeleteMember() {
+    if (!member) return;
+
     Alert.alert(
       "Delete member?",
-      `This will remove ${displayName} from the roster and assignments.`,
+      `This will remove ${member.name} from your alliance tracker.`,
       [
         {
           text: "Cancel",
@@ -221,29 +145,30 @@ export function MemberDetailScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              if (!deleteMember) {
-                Alert.alert(
-                  "Delete Not Available",
-                  "This screen could not find the delete member action.",
-                );
-                return;
-              }
-
               await deleteMember(member.id);
               router.back();
             } catch (error) {
-              console.error("DELETE MEMBER ERROR:", error);
-
-              Alert.alert(
-                "Could Not Delete Member",
-                error instanceof Error
-                  ? error.message
-                  : "Something went wrong while deleting this member.",
-              );
+              console.error("DELETE MEMBER ERROR", error);
+              Alert.alert("Error", "Could not delete member.");
             }
           },
         },
       ],
+    );
+  }
+
+  if (!memberId || !member) {
+    return (
+      <RequireActiveAlliance>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Member not found</Text>
+          <Text style={styles.emptyText}>
+            This member could not be loaded. They may have been deleted, or the
+            route may be missing a memberId.
+          </Text>
+          <AppButton title="Go Back" onPress={() => router.back()} />
+        </View>
+      </RequireActiveAlliance>
     );
   }
 
@@ -253,75 +178,248 @@ export function MemberDetailScreen() {
         style={styles.container}
         contentContainerStyle={styles.content}
       >
-        <View style={styles.card}>
-          <Text style={styles.username}>{displayName}</Text>
+        <View style={styles.headerCard}>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerTextGroup}>
+              <Text style={styles.eyebrow}>Alliance Member</Text>
+              <Text style={styles.title}>{member.name}</Text>
+            </View>
 
-          <Text style={styles.meta}>
-            {role.toUpperCase()} · HQ {level || "—"} · {mainSquad}
-          </Text>
+            <View style={styles.roleBadge}>
+              <Text style={styles.roleBadgeText}>{member.role}</Text>
+            </View>
+          </View>
+
+          <View style={styles.memberMetaGrid}>
+            <MetaItem label="Power" value={formatNumber(member.power)} />
+            <MetaItem
+              label="HQ Level"
+              value={member.level === null ? "—" : String(member.level)}
+            />
+            <MetaItem
+              label="Status"
+              value={member.isActive ? "Active" : "Inactive"}
+            />
+          </View>
+
+          {member.notes ? (
+            <View style={styles.notesCard}>
+              <Text style={styles.notesLabel}>R4 Notes</Text>
+              <Text style={styles.notesText}>{member.notes}</Text>
+            </View>
+          ) : null}
         </View>
 
-        <View style={styles.grid}>
-          <Info label="Power" value={formatCompactNumber(power ?? 0)} />
-          <Info label="HQ Level" value={(level || 0).toString()} />
+        <View style={styles.summaryGrid}>
+          <SummaryCard
+            label="Weekly VS"
+            value={formatNumber(weeklyStats.vsScore)}
+          />
+          <SummaryCard
+            label="Weekly Donations"
+            value={formatNumber(weeklyStats.donations)}
+          />
         </View>
 
-        <View style={styles.grid}>
-          <Info label="Weekly VS" value={formatCompactNumber(totalVs ?? 0)} />
-          <Info label="Donations" value={formatNumber(totalDonations ?? 0)} />
+        <View style={styles.summaryGrid}>
+          <SummaryCard
+            label="Monthly VS"
+            value={formatNumber(monthlyStats.vsScore)}
+          />
+          <SummaryCard
+            label="Monthly Donations"
+            value={formatNumber(monthlyStats.donations)}
+          />
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>R4 Notes</Text>
-
-          <Text style={styles.notes}>
-            {member.notes?.trim() || "No notes yet."}
-          </Text>
+        <View style={styles.actionsCard}>
+          <AppButton
+            title="Add Daily Stats"
+            onPress={() => goToAddDailyStats()}
+          />
+          <AppButton title="View Stats" onPress={goToStats} />
+          <AppButton title="Edit Member" onPress={goToEditMember} />
         </View>
 
-        <AppButton
-          title="View Stats"
-          onPress={() =>
-            router.push({
-              pathname: "../members/stats",
-              params: {
-                memberId: member.id,
-              },
-            })
-          }
-        />
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Daily Stats</Text>
 
-        <AppButton
-          title="Edit Member"
-          onPress={() =>
-            router.push({
-              pathname: "/members/edit",
-              params: {
-                memberId: member.id,
-              },
-            })
-          }
-        />
+            <Pressable onPress={goToStats}>
+              <Text style={styles.inlineAction}>View All</Text>
+            </Pressable>
+          </View>
 
-        <AppButton
-          title="Delete Member"
-          variant="danger"
-          onPress={confirmDelete}
-        />
+          {recentStats.length > 0 ? (
+            <View style={styles.statsList}>
+              {recentStats.map((stat) => {
+                const date = getStatDate(stat);
+
+                return (
+                  <Pressable
+                    key={`${getStatMemberId(stat)}-${date}`}
+                    style={styles.statRow}
+                    onPress={() => goToAddDailyStats(date)}
+                  >
+                    <View>
+                      <Text style={styles.statDate}>
+                        {formatLongDate(date)}
+                      </Text>
+                      <Text style={styles.statDateSub}>{date}</Text>
+                    </View>
+
+                    <View style={styles.statValues}>
+                      <Text style={styles.statValue}>
+                        VS: {formatNumber(getStatVsScore(stat))}
+                      </Text>
+                      <Text style={styles.statValue}>
+                        Don: {formatNumber(getStatDonations(stat))}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyCardTitle}>No stats yet</Text>
+              <Text style={styles.emptyCardText}>
+                Add this member&apos;s daily VS score and donations to start
+                tracking progress.
+              </Text>
+              <Pressable
+                style={styles.emptyAction}
+                onPress={() => goToAddDailyStats()}
+              >
+                <Text style={styles.emptyActionText}>Add Daily Stats</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+
+        <Pressable style={styles.deleteButton} onPress={confirmDeleteMember}>
+          <Text style={styles.deleteButtonText}>Delete Member</Text>
+        </Pressable>
       </ScrollView>
     </RequireActiveAlliance>
   );
 }
 
-export default MemberDetailScreen;
+export default MemberDetailsScreen;
 
-function Info({ label, value }: { label: string; value: string }) {
+type MetaItemProps = {
+  label: string;
+  value: string;
+};
+
+function MetaItem({ label, value }: MetaItemProps) {
   return (
-    <View style={styles.info}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={styles.metaItem}>
+      <Text style={styles.metaLabel}>{label}</Text>
+      <Text style={styles.metaValue}>{value}</Text>
     </View>
   );
+}
+
+type SummaryCardProps = {
+  label: string;
+  value: string;
+};
+
+function SummaryCard({ label, value }: SummaryCardProps) {
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
+
+function getStatMemberId(stat: any) {
+  return stat.memberId ?? stat.member_id;
+}
+
+function getStatDate(stat: any) {
+  return stat.date ?? "";
+}
+
+function getStatVsScore(stat: any) {
+  return Number(
+    stat.vsScore ??
+      stat.vs_score ??
+      stat.versusPoints ??
+      stat.versus_points ??
+      0,
+  );
+}
+
+function getStatDonations(stat: any) {
+  return Number(stat.donations ?? 0);
+}
+
+function getCurrentWeekRange() {
+  const now = new Date();
+  const day = now.getDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+
+  const start = new Date(now);
+  start.setDate(now.getDate() - daysSinceMonday);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return {
+    startDate: toDateKey(start),
+    endDate: toDateKey(end),
+  };
+}
+
+function getCurrentMonthRange() {
+  const now = new Date();
+
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  return {
+    startDate: toDateKey(start),
+    endDate: toDateKey(end),
+  };
+}
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function formatLongDate(dateKey: string) {
+  const date = parseDateKey(dateKey);
+
+  if (!date) return dateKey;
+
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatNumber(value: number | null | undefined) {
+  return Math.round(value ?? 0).toLocaleString();
 }
 
 const styles = StyleSheet.create({
@@ -329,97 +427,241 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-
   content: {
     padding: 16,
     gap: 14,
   },
-
-  center: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    gap: 16,
-  },
-
-  card: {
+  headerCard: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    gap: 6,
+    gap: 16,
   },
-
-  username: {
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  headerTextGroup: {
+    flex: 1,
+  },
+  eyebrow: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  title: {
     color: colors.text,
     fontSize: 28,
     fontWeight: "900",
   },
-
-  title: {
+  roleBadge: {
+    backgroundColor: colors.background,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  roleBadgeText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  memberMetaGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  metaItem: {
+    flex: 1,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+  },
+  metaLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  metaValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 5,
+  },
+  notesCard: {
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+  },
+  notesLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  notesText: {
+    color: colors.text,
+    lineHeight: 20,
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  summaryLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  summaryValue: {
     color: colors.text,
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
+    marginTop: 6,
   },
-
-  meta: {
-    color: colors.muted,
+  actionsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 10,
   },
-
-  grid: {
+  section: {
+    gap: 10,
+  },
+  sectionHeader: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  inlineAction: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  statsList: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  statRow: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
   },
-
-  info: {
-    flex: 1,
+  statDate: {
+    color: colors.text,
+    fontWeight: "900",
+  },
+  statDateSub: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  statValues: {
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  emptyCard: {
     backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    gap: 6,
+    gap: 8,
   },
-
-  infoLabel: {
-    color: colors.muted,
-    fontWeight: "600",
-  },
-
-  infoValue: {
+  emptyCardTitle: {
     color: colors.text,
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: "900",
   },
-
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  notes: {
+  emptyCardText: {
     color: colors.muted,
     lineHeight: 20,
   },
-
-  historyRow: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 10,
-    marginTop: 10,
-    gap: 2,
+  emptyAction: {
+    marginTop: 6,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
+    alignItems: "center",
   },
-
-  historyDate: {
+  emptyActionText: {
     color: colors.text,
-    fontWeight: "800",
+    fontWeight: "900",
   },
-
-  historyText: {
+  deleteButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  deleteButtonText: {
     color: colors.muted,
+    fontWeight: "900",
+  },
+  emptyContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 20,
+    justifyContent: "center",
+    gap: 12,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  emptyText: {
+    color: colors.muted,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 8,
   },
 });

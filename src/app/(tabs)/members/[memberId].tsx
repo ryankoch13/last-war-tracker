@@ -1,1 +1,1 @@
-export { MemberDetailScreen as default } from "../../../screens/members/MemberDetailsScreen";
+export { MemberDetailsScreen as default } from "../../../screens/members/MemberDetailsScreen";
