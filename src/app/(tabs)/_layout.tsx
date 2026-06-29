@@ -135,7 +135,6 @@ export default function TabsLayout() {
           headerShown: false,
         }}
       />
-
       <Tabs.Screen
         name="events/index"
         options={{
@@ -163,9 +162,11 @@ export default function TabsLayout() {
         options={{
           href: null,
           title: "Create Event",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
         }}
       />
-
       <Tabs.Screen
         name="trains/create"
         options={{

@@ -11,6 +11,7 @@ import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { getAllianceEvents } from "@/lib/allianceEvents";
 import { getTrainAssignments } from "@/lib/trainAssignments";
 import { getAllianceMembers } from "@/services/allianceMembers";
+import { AllianceMember } from "@/types/alliance";
 import { StatCard } from "../components/StatCard";
 import { useAllianceStore } from "../store/allianceStore";
 import { colors } from "../theme/colors";
@@ -44,7 +45,7 @@ export function DashboardScreen() {
   const alliance = useAllianceStore((state) => state.alliance);
   const activeAllianceId = alliance?.id ?? null;
 
-  const [members, setMembers] = useState<DashboardMember[]>([]);
+  const [members, setMembers] = useState<AllianceMember[]>([]);
   const [events, setEvents] = useState<DashboardEvent[]>([]);
   const [trains, setTrains] = useState<DashboardTrain[]>([]);
   const [loading, setLoading] = useState(false);
