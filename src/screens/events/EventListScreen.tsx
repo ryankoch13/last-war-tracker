@@ -1,17 +1,17 @@
-import { router, useFocusEffect } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useActiveAlliance } from "@/hooks/useActiveAlliance";
 import { AllianceEvent, getAllianceEvents } from "@/lib/allianceEvents";
+import { AllianceRole } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 import { formatDateTime } from "@/utils/format";
 
@@ -23,12 +23,8 @@ export function EventListScreen() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const canManageAlliance =
-    allianceUser?.role === "owner" ||
-    allianceUser?.role === "admin" ||
-    allianceUser?.role === "r4" ||
-    allianceUser?.role === "r5" ||
-    allianceUser?.role === "R4" ||
-    allianceUser?.role === "R5";
+    allianceUser?.role === AllianceRole.R4 ||
+    allianceUser?.role === AllianceRole.R5;
 
   useFocusEffect(
     useCallback(() => {
@@ -86,15 +82,6 @@ export function EventListScreen() {
             <Text style={styles.subtitle}>
               Track alliance events, reminders, and assignments.
             </Text>
-
-            {canManageAlliance ? (
-              <Pressable
-                onPress={() => router.push("/events/create")}
-                style={styles.createButton}
-              >
-                <Text style={styles.createButtonText}>+ Create Event</Text>
-              </Pressable>
-            ) : null}
 
             {errorMessage ? (
               <View style={styles.errorPanel}>
