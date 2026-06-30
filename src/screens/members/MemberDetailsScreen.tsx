@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useCanManageAlliance } from "@/hooks/useActiveAlliance";
 import { AppButton } from "../../components/AppButton";
 import { useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
@@ -29,6 +30,7 @@ export function MemberDetailsScreen() {
   const members = useAllianceStore((state) => state.members ?? []);
   const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
   const deleteMember = useAllianceStore((state) => state.deleteMember);
+  const canManageAlliance = useCanManageAlliance();
 
   const member = useMemo(() => {
     if (!memberId) return undefined;
@@ -98,6 +100,14 @@ export function MemberDetailsScreen() {
   function goToEditMember() {
     if (!memberId) return;
 
+    if (!canManageAlliance) {
+      Alert.alert(
+        "Permission required",
+        "Only R4 and R5 members can edit alliance members.",
+      );
+      return;
+    }
+
     router.push({
       pathname: EDIT_MEMBER_ROUTE,
       params: {
@@ -131,6 +141,14 @@ export function MemberDetailsScreen() {
 
   function confirmDeleteMember() {
     if (!member) return;
+
+    if (!canManageAlliance) {
+      Alert.alert(
+        "Permission required",
+        "Only R4 and R5 members can delete alliance members.",
+      );
+      return;
+    }
 
     Alert.alert(
       "Delete member?",
@@ -186,7 +204,9 @@ export function MemberDetailsScreen() {
             </View>
 
             <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{member.role}</Text>
+              <Text style={styles.roleBadgeText}>
+                {member.role.toUpperCase()}
+              </Text>
             </View>
           </View>
 
@@ -233,12 +253,16 @@ export function MemberDetailsScreen() {
         </View>
 
         <View style={styles.actionsCard}>
-          <AppButton
-            title="Add Daily Stats"
-            onPress={() => goToAddDailyStats()}
-          />
+          {canManageAlliance ? (
+            <>
+              <AppButton
+                title="Add Daily Stats"
+                onPress={() => goToAddDailyStats()}
+              />
+              <AppButton title="Edit Member" onPress={goToEditMember} />
+            </>
+          ) : null}
           <AppButton title="View Stats" onPress={goToStats} />
-          <AppButton title="Edit Member" onPress={goToEditMember} />
         </View>
 
         <View style={styles.section}>
@@ -297,9 +321,11 @@ export function MemberDetailsScreen() {
           )}
         </View>
 
-        <Pressable style={styles.deleteButton} onPress={confirmDeleteMember}>
-          <Text style={styles.deleteButtonText}>Delete Member</Text>
-        </Pressable>
+        {canManageAlliance ? (
+          <Pressable style={styles.deleteButton} onPress={confirmDeleteMember}>
+            <Text style={styles.deleteButtonText}>Delete Member</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </RequireActiveAlliance>
   );

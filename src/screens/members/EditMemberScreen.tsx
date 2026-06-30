@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,9 +13,13 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { AllianceRole } from "@/store/allianceStore";
+import { useCanManageAlliance } from "@/hooks/useActiveAlliance";
+import { AllianceMember } from "@/types/alliance";
 import { AppButton } from "../../components/AppButton";
-import { useAllianceStore } from "../../store/allianceStore";
+import {
+  AllianceRole,
+  useAllianceStore
+} from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 
 const VALID_ROLES: AllianceRole[] = [
@@ -26,9 +30,17 @@ const VALID_ROLES: AllianceRole[] = [
   AllianceRole.R5,
 ];
 
+type UpdateMemberRoleFn = (
+  memberId: string,
+  role: AllianceRole,
+) => Promise<void>;
+
 export function EditMemberScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ memberId?: string | string[] }>();
+
+  const params = useLocalSearchParams<{
+    memberId?: string | string[];
+  }>();
 
   const memberId = Array.isArray(params.memberId)
     ? params.memberId[0]
@@ -36,38 +48,49 @@ export function EditMemberScreen() {
 
   const existingMember = useAllianceStore((state) => {
     if (!memberId) return undefined;
-
     return (state.members ?? []).find((member) => member.id === memberId);
   });
+
+  const canManageAlliance = useCanManageAlliance();
 
   const addMember = useAllianceStore((state) => state.addMember);
   const updateMember = useAllianceStore((state) => state.updateMember);
 
-  const isEditing = !!memberId;
+  const updateMemberRole = useAllianceStore(
+    (state) =>
+      (state as unknown as { updateMemberRole?: UpdateMemberRoleFn })
+        .updateMemberRole,
+  );
+
+  const isEditing = Boolean(memberId);
 
   const [name, setName] = useState(existingMember?.name ?? "");
   const [role, setRole] = useState<AllianceRole>(
-    existingMember?.role ?? AllianceRole.R3,
+    existingMember?.role ?? AllianceRole.R1,
   );
   const [power, setPower] = useState(existingMember?.power?.toString() ?? "");
   const [level, setLevel] = useState(existingMember?.level?.toString() ?? "");
   const [notes, setNotes] = useState(existingMember?.notes ?? "");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!existingMember) return;
 
     setName(existingMember.name ?? "");
-    setRole(existingMember.role ?? AllianceRole.R3);
+    setRole(existingMember.role ?? AllianceRole.R1);
     setPower(existingMember.power?.toString() ?? "");
     setLevel(existingMember.level?.toString() ?? "");
     setNotes(existingMember.notes ?? "");
   }, [existingMember]);
 
-  const title = useMemo(() => {
+  const buttonTitle = useMemo(() => {
+    if (saving) return "Saving...";
     return isEditing ? "Save Changes" : "Create Member";
-  }, [isEditing]);
+  }, [isEditing, saving]);
 
   async function save() {
+    if (saving) return;
+
     if (isEditing && !existingMember) {
       Alert.alert(
         "Member not found",
@@ -100,26 +123,84 @@ export function EditMemberScreen() {
       return;
     }
 
-    const payload = {
+    const basePayload: Partial<AllianceMember> = {
       name: trimmedName,
-      role,
       power: parsedPower,
       level: parsedLevel,
       notes: trimmedNotes,
     };
 
     try {
-      if (memberId) {
-        await updateMember(memberId, payload);
+      setSaving(true);
+
+      if (memberId && existingMember) {
+        const roleChanged = role !== existingMember.role;
+
+        if (canManageAlliance && roleChanged && !updateMemberRole) {
+          await updateMember(memberId, {
+            ...basePayload,
+            role,
+          });
+        } else {
+          await updateMember(memberId, basePayload);
+
+          if (canManageAlliance && roleChanged && updateMemberRole) {
+            await updateMemberRole(memberId, role);
+          }
+        }
       } else {
-        await addMember(payload);
+        await addMember({
+          name: trimmedName,
+          role: canManageAlliance ? role : AllianceRole.R1,
+          power: parsedPower,
+          level: parsedLevel,
+          notes: trimmedNotes,
+          isActive: true,
+        });
       }
 
       router.back();
     } catch (error) {
       console.error("SAVE MEMBER ERROR", error);
-      Alert.alert("Error", "Could not save member.");
+
+      const message =
+        error instanceof Error ? error.message : "Could not save member.";
+
+      Alert.alert("Error", message);
+    } finally {
+      setSaving(false);
     }
+  }
+
+  if (!canManageAlliance) {
+    return (
+      <RequireActiveAlliance>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Permission required</Text>
+          <Text style={styles.emptyText}>
+            Only R4 and R5 members can edit alliance members.
+          </Text>
+
+          <AppButton title="Go Back" onPress={() => router.back()} />
+        </View>
+      </RequireActiveAlliance>
+    );
+  }
+
+  if (isEditing && !existingMember) {
+    return (
+      <RequireActiveAlliance>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Member not found</Text>
+          <Text style={styles.emptyText}>
+            This member may have been deleted, or the route may be missing a
+            memberId.
+          </Text>
+
+          <AppButton title="Go Back" onPress={() => router.back()} />
+        </View>
+      </RequireActiveAlliance>
+    );
   }
 
   return (
@@ -136,122 +217,155 @@ export function EditMemberScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Field
-            label="Name"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-            autoCorrect={false}
-          />
+          <View style={styles.headerCard}>
+            <Text style={styles.eyebrow}>
+              {isEditing ? "Edit Member" : "New Member"}
+            </Text>
+            <Text style={styles.title}>
+              {isEditing ? (existingMember?.name ?? "Member") : "Add Member"}
+            </Text>
+            <Text style={styles.subtitle}>
+              Update member details, HQ level, power, notes, and rank access.
+            </Text>
+          </View>
 
-          <RoleDropdown value={role} onChange={setRole} />
+          <View style={styles.formCard}>
+            <Field
+              label="Name"
+              value={name}
+              onChangeText={setName}
+              placeholder="Member name"
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
 
-          <Field
-            label="Power"
-            value={power}
-            onChangeText={setPower}
-            keyboardType="number-pad"
-            placeholder="0"
-          />
+            {canManageAlliance ? (
+              <RolePicker value={role} onChange={setRole} />
+            ) : (
+              <ReadOnlyRole role={role} />
+            )}
 
-          <Field
-            label="HQ Level"
-            value={level}
-            onChangeText={setLevel}
-            keyboardType="number-pad"
-            placeholder="0"
-          />
+            <Field
+              label="Power"
+              value={power}
+              onChangeText={setPower}
+              keyboardType="number-pad"
+              placeholder="0"
+            />
 
-          <Field
-            label="R4 Notes"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            style={styles.notesInput}
-          />
+            <Field
+              label="HQ Level"
+              value={level}
+              onChangeText={setLevel}
+              keyboardType="number-pad"
+              placeholder="0"
+            />
 
-          <AppButton title={title} onPress={save} />
+            <Field
+              label="R4 Notes"
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Optional notes"
+              autoCapitalize="sentences"
+              multiline
+              style={styles.notesInput}
+            />
+
+            {!canManageAlliance ? (
+              <View style={styles.permissionCard}>
+                <Text style={styles.permissionTitle}>Rank locked</Text>
+                <Text style={styles.permissionText}>
+                  Only R4 and R5 members can change another member&apos;s rank.
+                </Text>
+              </View>
+            ) : null}
+
+            <AppButton title={buttonTitle} onPress={save} disabled={saving} />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </RequireActiveAlliance>
   );
 }
 
-type RoleDropdownProps = {
+export default EditMemberScreen;
+
+type RolePickerProps = {
   value: AllianceRole;
   onChange: (role: AllianceRole) => void;
 };
 
-function RoleDropdown({ value, onChange }: RoleDropdownProps) {
-  const [open, setOpen] = useState(false);
-
-  function selectRole(nextRole: AllianceRole) {
-    onChange(nextRole);
-    setOpen(false);
-  }
-
+function RolePicker({ value, onChange }: RolePickerProps) {
   return (
-    <View>
-      <Text style={styles.label}>Role</Text>
+    <View style={styles.fieldGroup}>
+      <Text style={styles.label}>Rank</Text>
 
-      <Pressable
-        style={styles.dropdownButton}
-        onPress={() => setOpen((current) => !current)}
-      >
-        <Text style={styles.dropdownButtonText}>{value}</Text>
-        <Text style={styles.dropdownChevron}>{open ? "▲" : "▼"}</Text>
-      </Pressable>
+      <View style={styles.roleGrid}>
+        {VALID_ROLES.map((item) => {
+          const selected = item === value;
 
-      {open ? (
-        <View style={styles.dropdownMenu}>
-          {VALID_ROLES.map((item) => {
-            const selected = item === value;
-
-            return (
-              <Pressable
-                key={item}
+          return (
+            <Pressable
+              key={item}
+              style={[styles.roleChip, selected && styles.roleChipSelected]}
+              onPress={() => onChange(item)}
+            >
+              <Text
                 style={[
-                  styles.dropdownItem,
-                  selected && styles.dropdownItemSelected,
+                  styles.roleChipText,
+                  selected && styles.roleChipTextSelected,
                 ]}
-                onPress={() => selectRole(item)}
               >
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    selected && styles.dropdownItemTextSelected,
-                  ]}
-                >
-                  {item}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
+                {formatRoleLabel(item)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
-type FieldProps = React.ComponentProps<typeof TextInput> & {
+type ReadOnlyRoleProps = {
+  role: AllianceRole;
+};
+
+function ReadOnlyRole({ role }: ReadOnlyRoleProps) {
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.label}>Rank</Text>
+
+      <View style={styles.readOnlyRoleBox}>
+        <Text style={styles.readOnlyRoleText}>{formatRoleLabel(role)}</Text>
+      </View>
+    </View>
+  );
+}
+
+type FieldProps = ComponentProps<typeof TextInput> & {
   label: string;
 };
 
 function Field({ label, style, ...props }: FieldProps) {
   return (
-    <>
+    <View style={styles.fieldGroup}>
       <Text style={styles.label}>{label}</Text>
+
       <TextInput
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={colors.inputPlaceholder}
         style={[styles.input, style]}
         {...props}
       />
-    </>
+    </View>
   );
 }
 
 function parseNumberInput(value: string) {
   return Number(value.replace(/,/g, "").trim() || 0);
+}
+
+function formatRoleLabel(role: AllianceRole) {
+  return role.toUpperCase();
 }
 
 const styles = StyleSheet.create({
@@ -264,72 +378,143 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    gap: 10,
+    paddingBottom: 32,
+    gap: 14,
   },
-  label: {
-    color: colors.text,
-    fontWeight: "800",
-    marginTop: 4,
-  },
-  input: {
+  headerCard: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
-    color: colors.text,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 48,
+    padding: 16,
   },
-  notesInput: {
-    minHeight: 96,
-    textAlignVertical: "top",
-  },
-  dropdownButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dropdownButtonText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  dropdownChevron: {
+  eyebrow: {
     color: colors.muted,
     fontSize: 12,
     fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
   },
-  dropdownMenu: {
+  title: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "900",
+  },
+  subtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  formCard: {
     backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 14,
+  },
+  fieldGroup: {
+    gap: 8,
+  },
+  label: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  input: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    color: colors.inputText,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 48,
+    fontSize: 16,
+  },
+  notesInput: {
+    minHeight: 96,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  roleGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  roleChip: {
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.inputBackground,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 15,
+  },
+  roleChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  roleChipText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  roleChipTextSelected: {
+    color: "#FFFFFF",
+  },
+  readOnlyRoleBox: {
+    minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    overflow: "hidden",
-    marginTop: 6,
-  },
-  dropdownItem: {
+    backgroundColor: colors.inputBackground,
+    justifyContent: "center",
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
-  dropdownItemSelected: {
-    backgroundColor: colors.card,
-  },
-  dropdownItemText: {
+  readOnlyRoleText: {
     color: colors.text,
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "900",
   },
-  dropdownItemTextSelected: {
-    color: colors.primary,
+  permissionCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: 14,
+    gap: 4,
+  },
+  permissionTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  permissionText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  emptyContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: 20,
+    justifyContent: "center",
+    gap: 12,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  emptyText: {
+    color: colors.muted,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 8,
   },
 });
