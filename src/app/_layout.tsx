@@ -3,9 +3,11 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { useAllianceRealtimeRefresh } from "@/hooks/useAllianceRealtimeRefresh";
 import { colors } from "@/theme/colors";
 
 export default function RootLayout() {
+  useAllianceRealtimeRefresh();
   return (
     <GestureHandlerRootView
       style={{ flex: 1, backgroundColor: colors.background }}
