@@ -1,17 +1,6 @@
 // lib/events.ts
+import { AllianceEvent } from "./allianceEvents";
 import { supabase } from "./supabase";
-
-export type AllianceEvent = {
-  id: string;
-  alliance_id: string;
-  title: string;
-  event_type: string;
-  starts_at: string;
-  ends_at: string | null;
-  notes: string | null;
-  created_by: string | null;
-  created_at: string;
-};
 
 export async function getAllianceEvents(allianceId: string) {
   const { data, error } = await supabase

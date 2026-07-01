@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useCanManageAlliance } from "@/hooks/useActiveAlliance";
 import {
   AllianceMember,
   formatAllianceRole,
@@ -67,6 +69,7 @@ export function MemberListScreen() {
   const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
   const loading = useAllianceStore((state) => state.loading);
   const error = useAllianceStore((state) => state.error);
+  const canManageAlliance = useCanManageAlliance();
   const loadActiveAlliance = useAllianceStore(
     (state) => state.loadActiveAlliance,
   );
@@ -146,6 +149,14 @@ export function MemberListScreen() {
   }
 
   function handleAddMember() {
+    if (!canManageAlliance) {
+      Alert.alert(
+        "Permission required",
+        "Only R4 and R5 members can add alliance members.",
+      );
+      return;
+    }
+
     router.push("/members/create" as RouterTarget);
   }
 
@@ -216,9 +227,11 @@ export function MemberListScreen() {
             </Text>
           </View>
 
-          <Pressable style={styles.addButton} onPress={handleAddMember}>
-            <Text style={styles.addButtonText}>Add</Text>
-          </Pressable>
+          {canManageAlliance ? (
+            <Pressable style={styles.addButton} onPress={handleAddMember}>
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.statsGrid}>
@@ -292,7 +305,9 @@ export function MemberListScreen() {
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No active members yet</Text>
               <Text style={styles.emptyText}>
-                Tap Add to create your first alliance member.
+                {canManageAlliance
+                  ? "Tap Add to create your first alliance member."
+                  : "No active members have been added yet."}
               </Text>
             </View>
           )}

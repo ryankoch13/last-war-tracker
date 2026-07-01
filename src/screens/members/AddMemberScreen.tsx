@@ -1,17 +1,19 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { AllianceRole, useAllianceStore } from "@/store/allianceStore";
+import { useActiveAllianceId } from "@/hooks/useActiveAlliance";
+import { supabase } from "@/lib/supabase";
+import { AllianceRole } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
 const MEMBER_ROLES = [
@@ -39,11 +41,21 @@ function parseNumber(value: string) {
 }
 
 function formatRole(role: AllianceRole) {
-  return role.toUpperCase();
+  return String(role).toUpperCase();
+}
+
+function normalizeRoleForDatabase(role: AllianceRole) {
+  return String(role).toLowerCase();
+}
+
+function isLeaderRole(role: string | null | undefined) {
+  const normalizedRole = String(role ?? "").toLowerCase();
+
+  return normalizedRole === "r4" || normalizedRole === "r5";
 }
 
 export function AddMemberScreen() {
-  const addMember = useAllianceStore((state) => state.addMember);
+  const activeAllianceId = useActiveAllianceId();
 
   const [name, setName] = useState("");
   const [role, setRole] = useState<AllianceRole>(AllianceRole.R1);
@@ -55,6 +67,14 @@ export function AddMemberScreen() {
   async function handleSave() {
     const trimmedName = name.trim();
 
+    if (!activeAllianceId) {
+      Alert.alert(
+        "No alliance selected",
+        "You need to be in an active alliance before adding members.",
+      );
+      return;
+    }
+
     if (!trimmedName) {
       Alert.alert("Name required", "Enter the member's in-game name.");
       return;
@@ -63,16 +83,51 @@ export function AddMemberScreen() {
     try {
       setSaving(true);
 
-      await addMember({
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("You need to be logged in to add members.");
+      }
+
+      const { data: activeAllianceUser, error: activeAllianceUserError } =
+        await supabase
+          .from("alliance_users")
+          .select("role")
+          .eq("alliance_id", activeAllianceId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+      if (activeAllianceUserError) {
+        throw activeAllianceUserError;
+      }
+
+      if (!isLeaderRole(activeAllianceUser?.role)) {
+        throw new Error("Only R4 and R5 members can add roster members.");
+      }
+
+      const { error: insertError } = await supabase.from("members").insert({
+        alliance_id: activeAllianceId,
+        user_id: null,
+        created_by: user.id,
         name: trimmedName,
-        role,
+        role: normalizeRoleForDatabase(role),
         power: parseNumber(power),
         level: level.trim() ? parseNumber(level) : null,
-        notes: notes.trim(),
-        isActive: true,
-        userId: null,
-        updatedAt: new Date().toISOString(),
+        notes: notes.trim() || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
       });
+
+      if (insertError) {
+        throw insertError;
+      }
 
       router.replace("/members");
     } catch (error) {
@@ -92,7 +147,8 @@ export function AddMemberScreen() {
           <Text style={styles.eyebrow}>Members</Text>
           <Text style={styles.title}>Add Member</Text>
           <Text style={styles.subtitle}>
-            Add a member to your alliance roster.
+            Add a member to your alliance roster. They do not need to have an
+            app account.
           </Text>
         </View>
 
@@ -107,6 +163,7 @@ export function AddMemberScreen() {
               autoCapitalize="words"
               autoCorrect={false}
               style={styles.input}
+              editable={!saving}
             />
           </View>
 
@@ -147,6 +204,7 @@ export function AddMemberScreen() {
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               style={styles.input}
+              editable={!saving}
             />
           </View>
 
@@ -159,6 +217,7 @@ export function AddMemberScreen() {
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               style={styles.input}
+              editable={!saving}
             />
           </View>
 
@@ -172,6 +231,7 @@ export function AddMemberScreen() {
               autoCapitalize="sentences"
               multiline
               style={[styles.input, styles.notesInput]}
+              editable={!saving}
             />
           </View>
 

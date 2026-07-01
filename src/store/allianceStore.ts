@@ -155,7 +155,7 @@ type AllianceStoreState = {
     updates: Partial<AllianceMember>,
   ) => Promise<void>;
   deleteMember: (memberId: string) => Promise<void>;
-
+  updateMemberRole: (memberId: string, role: AllianceRole) => Promise<void>;
   addDailyStat: (stat: DailyMemberStatInput) => Promise<void>;
   upsertDailyStat: (stat: DailyMemberStatInput) => Promise<void>;
   updateDailyStat: (
@@ -181,6 +181,10 @@ type AllianceStoreState = {
   updateAllianceEvent: (
     eventId: string,
     updates: Partial<AllianceEvent>,
+  ) => Promise<void>;
+  updateOwnMemberProgress: (
+    memberId: string,
+    updates: Pick<AllianceMember, "power" | "level">,
   ) => Promise<void>;
   completeAllianceEvent: (eventId: string) => Promise<void>;
   reopenAllianceEvent: (eventId: string) => Promise<void>;
@@ -261,6 +265,14 @@ function generateInviteCode() {
 function cleanPayload<T extends Record<string, unknown>>(payload: T) {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined),
+  );
+}
+
+function canManageAllianceRole(role: AllianceRole | string | null | undefined) {
+  const normalizedRole = normalizeRole(role);
+
+  return (
+    normalizedRole === AllianceRole.R4 || normalizedRole === AllianceRole.R5
   );
 }
 
@@ -375,6 +387,14 @@ function mapAlliance(row: any): Alliance {
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };
+}
+
+function assertCanManageAlliance(
+  role: AllianceRole | string | null | undefined,
+) {
+  if (!canManageAllianceRole(role)) {
+    throw new Error("Only R4 and R5 members can manage alliance members.");
+  }
 }
 
 function mapAllianceUser(row: any): AllianceUser {
@@ -899,6 +919,8 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
   },
 
   addMember: async (member) => {
+    assertCanManageAlliance(get().allianceUser?.role);
+
     const allianceId = get().activeAllianceId;
 
     if (!allianceId) {
@@ -944,7 +966,49 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     });
   },
 
+  updateOwnMemberProgress: async (memberId, updates) => {
+    const targetMember = get().members.find((member) => member.id === memberId);
+    const currentUserId = get().allianceUser?.userId;
+
+    if (!targetMember || targetMember.userId !== currentUserId) {
+      throw new Error("You can only update your own power and HQ level.");
+    }
+
+    const { data: memberRow, error } = await supabase.rpc(
+      "update_own_member_progress",
+      {
+        p_member_id: memberId,
+        p_power: Number(updates.power ?? 0),
+        p_level: updates.level ?? null,
+      },
+    );
+
+    if (error) {
+      console.error("UPDATE OWN MEMBER PROGRESS ERROR:", error);
+      throw error;
+    }
+
+    const updatedMember = mapMember(memberRow);
+
+    set((state) => {
+      const members = sortMembers(
+        state.members.map((member) =>
+          member.id === memberId ? updatedMember : member,
+        ),
+      );
+
+      return {
+        members,
+        membersWithStats: buildMembersWithStats(
+          members,
+          state.dailyStats ?? [],
+        ),
+      };
+    });
+  },
+
   updateMember: async (memberId, updates) => {
+    assertCanManageAlliance(get().allianceUser?.role);
     if (updates.name !== undefined && !updates.name.trim()) {
       throw new Error("Member name is required.");
     }
@@ -1001,6 +1065,7 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
   },
 
   deleteMember: async (memberId) => {
+    assertCanManageAlliance(get().allianceUser?.role);
     await supabase
       .from("daily_member_stats")
       .delete()
@@ -1058,6 +1123,58 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
         })),
       };
     });
+  },
+
+  updateMemberRole: async (memberId, role) => {
+    set({ loading: true, error: null });
+
+    try {
+      const targetMember = get().members.find(
+        (member) => member.id === memberId,
+      );
+
+      const { error } = await supabase.rpc("update_alliance_member_role", {
+        p_member_id: memberId,
+        p_role: role,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      set((state) => ({
+        members: state.members.map((member) =>
+          member.id === memberId
+            ? {
+                ...member,
+                role,
+                updatedAt: new Date().toISOString(),
+              }
+            : member,
+        ),
+        allianceUser:
+          targetMember?.userId &&
+          state.allianceUser?.userId === targetMember.userId
+            ? {
+                ...state.allianceUser,
+                role,
+              }
+            : state.allianceUser,
+        loading: false,
+      }));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to update member role.";
+
+      set({
+        error: message,
+        loading: false,
+      });
+
+      throw error;
+    }
   },
 
   addDailyStat: async (stat) => {

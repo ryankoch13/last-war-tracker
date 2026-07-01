@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Alert,
@@ -5,33 +6,39 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
-import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
 import {
-  AllianceEventType,
+  AllianceEvent,
+  AllianceMember,
   BoardItemStatus,
   useAllianceStore,
 } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
-const EVENT_TYPES = [
-  AllianceEventType.VS,
-  AllianceEventType.DesertStorm,
-  AllianceEventType.CapitalWar,
-  AllianceEventType.RareSoil,
-  AllianceEventType.Train,
-  AllianceEventType.Custom,
-];
+function formatEventDate(value: string | null | undefined) {
+  if (!value) {
+    return "No date";
+  }
 
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  const dateKey = value.slice(0, 10);
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return dateKey;
+  }
+
+  return new Date(year, month - 1, day).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function getAssignedMemberNames(
-  members: Array<{ id: string; name: string }>,
+  members: AllianceMember[],
   assignedMemberIds?: string[],
 ) {
   const safeAssignedMemberIds = assignedMemberIds ?? [];
@@ -47,11 +54,32 @@ function getAssignedMemberNames(
   return names.length > 0 ? names.join(", ") : "None assigned";
 }
 
+function sortActiveEvents(events: AllianceEvent[]) {
+  return events.slice().sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+  });
+}
+
+function sortCompletedEvents(events: AllianceEvent[]) {
+  return events.slice().sort((a, b) => {
+    const aDate = a.completedAt ?? a.date ?? "";
+    const bDate = b.completedAt ?? b.date ?? "";
+
+    return bDate.localeCompare(aDate);
+  });
+}
+
 export function EventBoardScreen() {
+  const { canManageAlliance, loading } = useActiveAlliance();
+
   const members = useAllianceStore((state) => state.members ?? []);
   const events = useAllianceStore((state) => state.events ?? []);
-
-  const addAllianceEvent = useAllianceStore((state) => state.addAllianceEvent);
   const updateAllianceEvent = useAllianceStore(
     (state) => state.updateAllianceEvent,
   );
@@ -65,90 +93,48 @@ export function EventBoardScreen() {
     (state) => state.deleteAllianceEvent,
   );
 
-  const [name, setName] = useState("");
-  const [type, setType] = useState<AllianceEventType>(AllianceEventType.VS);
-  const [date, setDate] = useState(todayString());
-  const [notes, setNotes] = useState("");
-  const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
-
-  const activeMembers = useMemo(() => {
-    return members
-      .filter((member) => member.isActive !== false)
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [members]);
+  const [actionEventId, setActionEventId] = useState<string | null>(null);
 
   const activeEvents = useMemo(() => {
-    return events
-      .filter((event) => event.status !== BoardItemStatus.Completed)
-      .slice()
-      .sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
-
-        if (dateCompare !== 0) {
-          return dateCompare;
-        }
-
-        return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
-      });
+    return sortActiveEvents(
+      events.filter((event) => event.status !== BoardItemStatus.Completed),
+    );
   }, [events]);
 
   const completedEvents = useMemo(() => {
-    return events
-      .filter((event) => event.status === BoardItemStatus.Completed)
-      .slice()
-      .sort((a, b) => {
-        const aDate = a.completedAt ?? a.date ?? "";
-        const bDate = b.completedAt ?? b.date ?? "";
-
-        return bDate.localeCompare(aDate);
-      });
+    return sortCompletedEvents(
+      events.filter((event) => event.status === BoardItemStatus.Completed),
+    );
   }, [events]);
 
-  function resetForm() {
-    setName("");
-    setType(AllianceEventType.VS);
-    setDate(todayString());
-    setNotes("");
-    setAssignedMemberIds([]);
-  }
-
-  function toggleAssignedMember(memberId: string) {
-    setAssignedMemberIds((currentIds) => {
-      if (currentIds.includes(memberId)) {
-        return currentIds.filter((currentId) => currentId !== memberId);
-      }
-
-      return [...currentIds, memberId];
-    });
-  }
-
-  function handleAddEvent() {
-    const trimmedName = name.trim();
-
-    if (!trimmedName) {
-      Alert.alert("Event name required", "Enter a name for the event.");
-      return;
+  async function runEventAction(
+    eventId: string,
+    action: () => Promise<void>,
+    errorTitle: string,
+  ) {
+    try {
+      setActionEventId(eventId);
+      await action();
+    } catch (error) {
+      Alert.alert(
+        errorTitle,
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setActionEventId(null);
     }
-
-    addAllianceEvent({
-      name: trimmedName,
-      type,
-      date: date.trim() || todayString(),
-      notes: notes.trim(),
-      assignedMemberIds,
-      status: BoardItemStatus.Active,
-      completedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
-
-    resetForm();
   }
 
   function clearAssignedMembersForEvent(eventId: string) {
-    updateAllianceEvent(eventId, {
-      assignedMemberIds: [],
-    });
+    void runEventAction(
+      eventId,
+      () =>
+        updateAllianceEvent(eventId, {
+          assignedMemberIds: [],
+          updatedAt: new Date().toISOString(),
+        }),
+      "Could not clear members",
+    );
   }
 
   function confirmCompleteEvent(eventId: string) {
@@ -162,9 +148,22 @@ export function EventBoardScreen() {
         },
         {
           text: "Complete",
-          onPress: () => completeAllianceEvent(eventId),
+          onPress: () =>
+            void runEventAction(
+              eventId,
+              () => completeAllianceEvent(eventId),
+              "Could not complete event",
+            ),
         },
       ],
+    );
+  }
+
+  function confirmReopenEvent(eventId: string) {
+    void runEventAction(
+      eventId,
+      () => reopenAllianceEvent(eventId),
+      "Could not reopen event",
     );
   }
 
@@ -177,261 +176,179 @@ export function EventBoardScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => deleteAllianceEvent(eventId),
+        onPress: () =>
+          void runEventAction(
+            eventId,
+            () => deleteAllianceEvent(eventId),
+            "Could not delete event",
+          ),
       },
     ]);
   }
 
-  return (
-    <RequireActiveAlliance>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Alliance Events</Text>
-          <Text style={styles.title}>Event Board</Text>
-          <Text style={styles.subtitle}>
-            Track active alliance events, assign members, and keep a completed
-            event history.
+  function renderEventCard(event: AllianceEvent, completed = false) {
+    const busy = actionEventId === event.id;
+
+    return (
+      <View key={event.id} style={styles.eventCard}>
+        <View style={styles.eventHeader}>
+          <View style={styles.eventHeaderText}>
+            <Text style={styles.eventTitle}>{event.name}</Text>
+            <Text style={styles.eventMeta}>
+              {event.type} · {formatEventDate(event.date)}
+            </Text>
+          </View>
+
+          <View style={completed ? styles.completedBadge : styles.statusBadge}>
+            <Text
+              style={
+                completed ? styles.completedBadgeText : styles.statusBadgeText
+              }
+            >
+              {completed ? "Completed" : "Active"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.eventRow}>
+          <Text style={styles.eventLabel}>Assigned Members</Text>
+          <Text style={styles.eventValue}>
+            {getAssignedMemberNames(members, event.assignedMemberIds)}
           </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>New Event</Text>
+        {event.notes ? (
+          <Text style={styles.eventNotes}>{event.notes}</Text>
+        ) : null}
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Event Name</Text>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Alliance Duel Push, Desert Storm, Capital War..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="words"
-              autoCorrect={false}
-              style={styles.input}
-            />
-          </View>
+        {canManageAlliance ? (
+          <View style={styles.actionRow}>
+            {!completed ? (
+              <>
+                <Pressable
+                  style={[
+                    styles.secondaryButton,
+                    busy && styles.disabledButton,
+                  ]}
+                  onPress={() => clearAssignedMembersForEvent(event.id)}
+                  disabled={busy}
+                >
+                  <Text style={styles.secondaryButtonText}>Clear Members</Text>
+                </Pressable>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Event Type</Text>
-
-            <View style={styles.typeGrid}>
-              {EVENT_TYPES.map((eventType) => {
-                const selected = type === eventType;
-
-                return (
-                  <Pressable
-                    key={eventType}
-                    style={[styles.typeChip, selected && styles.typeChipActive]}
-                    onPress={() => setType(eventType)}
-                  >
-                    <Text
-                      style={[
-                        styles.typeChipText,
-                        selected && styles.typeChipTextActive,
-                      ]}
-                    >
-                      {eventType}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Date</Text>
-            <TextInput
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Assigned Members</Text>
-
-            {activeMembers.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.memberPicker}
-              >
-                {activeMembers.map((member) => {
-                  const selected = assignedMemberIds.includes(member.id);
-
-                  return (
-                    <Pressable
-                      key={member.id}
-                      style={[
-                        styles.memberChip,
-                        selected && styles.memberChipActive,
-                      ]}
-                      onPress={() => toggleAssignedMember(member.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.memberChipText,
-                          selected && styles.memberChipTextActive,
-                        ]}
-                      >
-                        {member.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+                <Pressable
+                  style={[styles.completeButton, busy && styles.disabledButton]}
+                  onPress={() => confirmCompleteEvent(event.id)}
+                  disabled={busy}
+                >
+                  <Text style={styles.completeButtonText}>Complete</Text>
+                </Pressable>
+              </>
             ) : (
-              <Text style={styles.emptyText}>
-                Add members before assigning them to events.
-              </Text>
+              <Pressable
+                style={[styles.secondaryButton, busy && styles.disabledButton]}
+                onPress={() => confirmReopenEvent(event.id)}
+                disabled={busy}
+              >
+                <Text style={styles.secondaryButtonText}>Reopen</Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={[styles.deleteButton, busy && styles.disabledButton]}
+              onPress={() => confirmDeleteEvent(event.id)}
+              disabled={busy}
+            >
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <View style={styles.titleCopy}>
+            <Text style={styles.eyebrow}>Alliance Events</Text>
+            <Text style={styles.title}>Event Board</Text>
+            <Text style={styles.subtitle}>
+              Track active alliance events, assigned members, and completed
+              event history.
+            </Text>
+          </View>
+
+          {canManageAlliance ? (
+            <Pressable
+              style={styles.addButton}
+              onPress={() => router.push("/events/new")}
+            >
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {!canManageAlliance ? (
+          <View style={styles.permissionCard}>
+            <Text style={styles.permissionTitle}>View-only access</Text>
+            <Text style={styles.permissionText}>
+              Only R4 and R5 members can create or manage events.
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>Loading events...</Text>
+          <Text style={styles.emptyText}>
+            Your alliance event board is being refreshed.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Active Events</Text>
+              <Text style={styles.sectionCount}>{activeEvents.length}</Text>
+            </View>
+
+            {activeEvents.length > 0 ? (
+              activeEvents.map((event) => renderEventCard(event))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No active events</Text>
+                <Text style={styles.emptyText}>
+                  {canManageAlliance
+                    ? "Tap Add to create your first alliance event."
+                    : "R4 and R5 members can create events for the alliance."}
+                </Text>
+              </View>
             )}
           </View>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Optional notes"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="sentences"
-              multiline
-              style={[styles.input, styles.notesInput]}
-            />
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>History</Text>
+              <Text style={styles.sectionCount}>{completedEvents.length}</Text>
+            </View>
+
+            {completedEvents.length > 0 ? (
+              completedEvents.map((event) => renderEventCard(event, true))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No event history yet</Text>
+                <Text style={styles.emptyText}>
+                  Completed events will appear here.
+                </Text>
+              </View>
+            )}
           </View>
-
-          <Pressable style={styles.primaryButton} onPress={handleAddEvent}>
-            <Text style={styles.primaryButtonText}>Add Event</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Events</Text>
-
-          {activeEvents.length > 0 ? (
-            activeEvents.map((event) => (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.eventHeader}>
-                  <View style={styles.eventHeaderText}>
-                    <Text style={styles.eventTitle}>{event.name}</Text>
-                    <Text style={styles.eventMeta}>
-                      {event.type} · {event.date}
-                    </Text>
-                  </View>
-
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>Active</Text>
-                  </View>
-                </View>
-
-                <View style={styles.eventRow}>
-                  <Text style={styles.eventLabel}>Assigned Members</Text>
-                  <Text style={styles.eventValue}>
-                    {getAssignedMemberNames(members, event.assignedMemberIds)}
-                  </Text>
-                </View>
-
-                {event.notes ? (
-                  <Text style={styles.eventNotes}>{event.notes}</Text>
-                ) : null}
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => clearAssignedMembersForEvent(event.id)}
-                  >
-                    <Text style={styles.secondaryButtonText}>
-                      Clear Members
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.completeButton}
-                    onPress={() => confirmCompleteEvent(event.id)}
-                  >
-                    <Text style={styles.completeButtonText}>Complete</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.deleteButton}
-                    onPress={() => confirmDeleteEvent(event.id)}
-                  >
-                    <Text style={styles.deleteButtonText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No active events</Text>
-              <Text style={styles.emptyText}>
-                Add an event above to start building your alliance event board.
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>History</Text>
-
-          {completedEvents.length > 0 ? (
-            completedEvents.map((event) => (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.eventHeader}>
-                  <View style={styles.eventHeaderText}>
-                    <Text style={styles.eventTitle}>{event.name}</Text>
-                    <Text style={styles.eventMeta}>
-                      {event.type} · {event.date}
-                    </Text>
-                  </View>
-
-                  <View style={styles.completedBadge}>
-                    <Text style={styles.completedBadgeText}>Completed</Text>
-                  </View>
-                </View>
-
-                <View style={styles.eventRow}>
-                  <Text style={styles.eventLabel}>Assigned Members</Text>
-                  <Text style={styles.eventValue}>
-                    {getAssignedMemberNames(members, event.assignedMemberIds)}
-                  </Text>
-                </View>
-
-                {event.notes ? (
-                  <Text style={styles.eventNotes}>{event.notes}</Text>
-                ) : null}
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => reopenAllianceEvent(event.id)}
-                  >
-                    <Text style={styles.secondaryButtonText}>Reopen</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.deleteButton}
-                    onPress={() => confirmDeleteEvent(event.id)}
-                  >
-                    <Text style={styles.deleteButtonText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No event history yet</Text>
-              <Text style={styles.emptyText}>
-                Completed events will appear here.
-              </Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-    </RequireActiveAlliance>
+        </>
+      )}
+    </ScrollView>
   );
 }
 
@@ -452,6 +369,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textTransform: "uppercase",
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 14,
+  },
+  titleCopy: {
+    flex: 1,
+  },
   title: {
     color: colors.text,
     fontSize: 32,
@@ -463,127 +389,62 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  card: {
-    borderRadius: 22,
-    backgroundColor: "#ffffff",
-    padding: 18,
-    marginBottom: 24,
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    elevation: 2,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "900",
-    marginBottom: 16,
-  },
-  fieldGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
-  input: {
-    minHeight: 48,
+  addButton: {
+    minHeight: 44,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#d8d8d8",
-    backgroundColor: "#ffffff",
-    color: "#111111",
-    paddingHorizontal: 14,
-    fontSize: 16,
-  },
-  notesInput: {
-    minHeight: 86,
-    paddingTop: 12,
-    textAlignVertical: "top",
-  },
-  typeGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  typeChip: {
-    minHeight: 38,
-    justifyContent: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#d8d8d8",
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 14,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  typeChipActive: {
-    borderColor: colors.primary,
     backgroundColor: colors.primary,
-  },
-  typeChipText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  typeChipTextActive: {
-    color: "#ffffff",
-  },
-  memberPicker: {
-    paddingRight: 20,
-  },
-  memberChip: {
-    minHeight: 38,
-    justifyContent: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#d8d8d8",
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 14,
-    marginRight: 8,
-  },
-  memberChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  memberChipText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  memberChipTextActive: {
-    color: "#ffffff",
-  },
-  primaryButton: {
-    minHeight: 50,
-    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
-    marginTop: 4,
+    paddingHorizontal: 18,
   },
-  primaryButtonText: {
+  addButtonText: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
+  permissionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginTop: 18,
+  },
+  permissionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  permissionText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+  },
   section: {
-    marginBottom: 26,
+    marginBottom: 28,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
   sectionTitle: {
     color: colors.text,
     fontSize: 21,
     fontWeight: "900",
-    marginBottom: 12,
+  },
+  sectionCount: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: "900",
   },
   eventCard: {
     borderRadius: 20,
-    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: 16,
     marginBottom: 12,
   },
@@ -610,7 +471,7 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     borderRadius: 999,
-    backgroundColor: "rgba(79, 70, 229, 0.12)",
+    backgroundColor: "rgba(124, 58, 237, 0.16)",
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -621,12 +482,12 @@ const styles = StyleSheet.create({
   },
   completedBadge: {
     borderRadius: 999,
-    backgroundColor: "rgba(34, 197, 94, 0.12)",
+    backgroundColor: "rgba(34, 197, 94, 0.14)",
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   completedBadgeText: {
-    color: "#15803d",
+    color: colors.success,
     fontSize: 12,
     fontWeight: "900",
   },
@@ -636,7 +497,7 @@ const styles = StyleSheet.create({
   eventLabel: {
     color: colors.textMuted,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "900",
     marginBottom: 2,
     textTransform: "uppercase",
   },
@@ -663,7 +524,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#d8d8d8",
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 14,
     marginRight: 8,
     marginTop: 8,
@@ -691,18 +553,20 @@ const styles = StyleSheet.create({
     minHeight: 38,
     justifyContent: "center",
     borderRadius: 12,
-    backgroundColor: "#fee2e2",
+    backgroundColor: "rgba(220, 38, 38, 0.14)",
     paddingHorizontal: 14,
     marginTop: 8,
   },
   deleteButtonText: {
-    color: "#b91c1c",
+    color: colors.danger,
     fontSize: 13,
     fontWeight: "900",
   },
   emptyCard: {
     borderRadius: 18,
-    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: 18,
   },
   emptyTitle: {
@@ -715,5 +579,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
