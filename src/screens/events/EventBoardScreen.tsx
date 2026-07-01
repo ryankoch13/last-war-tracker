@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -9,13 +9,36 @@ import {
   View,
 } from "react-native";
 
-import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
-import { useCanManageAlliance } from "@/hooks/useActiveAlliance";
-import { BoardItemStatus, useAllianceStore } from "@/store/allianceStore";
+import { useActiveAlliance } from "@/hooks/useActiveAlliance";
+import {
+  AllianceEvent,
+  AllianceMember,
+  BoardItemStatus,
+  useAllianceStore,
+} from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
+function formatEventDate(value: string | null | undefined) {
+  if (!value) {
+    return "No date";
+  }
+
+  const dateKey = value.slice(0, 10);
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return dateKey;
+  }
+
+  return new Date(year, month - 1, day).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function getAssignedMemberNames(
-  members: Array<{ id: string; name: string }>,
+  members: AllianceMember[],
   assignedMemberIds?: string[],
 ) {
   const safeAssignedMemberIds = assignedMemberIds ?? [];
@@ -31,12 +54,32 @@ function getAssignedMemberNames(
   return names.length > 0 ? names.join(", ") : "None assigned";
 }
 
+function sortActiveEvents(events: AllianceEvent[]) {
+  return events.slice().sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+  });
+}
+
+function sortCompletedEvents(events: AllianceEvent[]) {
+  return events.slice().sort((a, b) => {
+    const aDate = a.completedAt ?? a.date ?? "";
+    const bDate = b.completedAt ?? b.date ?? "";
+
+    return bDate.localeCompare(aDate);
+  });
+}
+
 export function EventBoardScreen() {
-  const canManageAlliance = useCanManageAlliance();
+  const { canManageAlliance, loading } = useActiveAlliance();
 
   const members = useAllianceStore((state) => state.members ?? []);
   const events = useAllianceStore((state) => state.events ?? []);
-
   const updateAllianceEvent = useAllianceStore(
     (state) => state.updateAllianceEvent,
   );
@@ -50,37 +93,48 @@ export function EventBoardScreen() {
     (state) => state.deleteAllianceEvent,
   );
 
+  const [actionEventId, setActionEventId] = useState<string | null>(null);
+
   const activeEvents = useMemo(() => {
-    return events
-      .filter((event) => event.status !== BoardItemStatus.Completed)
-      .slice()
-      .sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
-
-        if (dateCompare !== 0) {
-          return dateCompare;
-        }
-
-        return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
-      });
+    return sortActiveEvents(
+      events.filter((event) => event.status !== BoardItemStatus.Completed),
+    );
   }, [events]);
 
   const completedEvents = useMemo(() => {
-    return events
-      .filter((event) => event.status === BoardItemStatus.Completed)
-      .slice()
-      .sort((a, b) => {
-        const aDate = a.completedAt ?? a.date ?? "";
-        const bDate = b.completedAt ?? b.date ?? "";
-
-        return bDate.localeCompare(aDate);
-      });
+    return sortCompletedEvents(
+      events.filter((event) => event.status === BoardItemStatus.Completed),
+    );
   }, [events]);
 
+  async function runEventAction(
+    eventId: string,
+    action: () => Promise<void>,
+    errorTitle: string,
+  ) {
+    try {
+      setActionEventId(eventId);
+      await action();
+    } catch (error) {
+      Alert.alert(
+        errorTitle,
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setActionEventId(null);
+    }
+  }
+
   function clearAssignedMembersForEvent(eventId: string) {
-    updateAllianceEvent(eventId, {
-      assignedMemberIds: [],
-    });
+    void runEventAction(
+      eventId,
+      () =>
+        updateAllianceEvent(eventId, {
+          assignedMemberIds: [],
+          updatedAt: new Date().toISOString(),
+        }),
+      "Could not clear members",
+    );
   }
 
   function confirmCompleteEvent(eventId: string) {
@@ -94,9 +148,22 @@ export function EventBoardScreen() {
         },
         {
           text: "Complete",
-          onPress: () => completeAllianceEvent(eventId),
+          onPress: () =>
+            void runEventAction(
+              eventId,
+              () => completeAllianceEvent(eventId),
+              "Could not complete event",
+            ),
         },
       ],
+    );
+  }
+
+  function confirmReopenEvent(eventId: string) {
+    void runEventAction(
+      eventId,
+      () => reopenAllianceEvent(eventId),
+      "Could not reopen event",
     );
   }
 
@@ -109,182 +176,179 @@ export function EventBoardScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => deleteAllianceEvent(eventId),
+        onPress: () =>
+          void runEventAction(
+            eventId,
+            () => deleteAllianceEvent(eventId),
+            "Could not delete event",
+          ),
       },
     ]);
   }
 
-  return (
-    <RequireActiveAlliance>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Alliance Events</Text>
+  function renderEventCard(event: AllianceEvent, completed = false) {
+    const busy = actionEventId === event.id;
 
-          <View style={styles.titleRow}>
-            <View style={styles.titleCopy}>
-              <Text style={styles.title}>Event Board</Text>
-              <Text style={styles.subtitle}>
-                Track active alliance events, assigned members, and completed
-                event history.
-              </Text>
-            </View>
-
-            {canManageAlliance ? (
-              <Pressable
-                style={styles.addButton}
-                onPress={() => router.push("/events/new")}
-              >
-                <Text style={styles.addButtonText}>Add</Text>
-              </Pressable>
-            ) : null}
+    return (
+      <View key={event.id} style={styles.eventCard}>
+        <View style={styles.eventHeader}>
+          <View style={styles.eventHeaderText}>
+            <Text style={styles.eventTitle}>{event.name}</Text>
+            <Text style={styles.eventMeta}>
+              {event.type} · {formatEventDate(event.date)}
+            </Text>
           </View>
 
-          {!canManageAlliance ? (
-            <View style={styles.permissionCard}>
-              <Text style={styles.permissionTitle}>View-only access</Text>
-              <Text style={styles.permissionText}>
-                Only R4 and R5 members can create or manage events.
-              </Text>
-            </View>
+          <View style={completed ? styles.completedBadge : styles.statusBadge}>
+            <Text
+              style={
+                completed ? styles.completedBadgeText : styles.statusBadgeText
+              }
+            >
+              {completed ? "Completed" : "Active"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.eventRow}>
+          <Text style={styles.eventLabel}>Assigned Members</Text>
+          <Text style={styles.eventValue}>
+            {getAssignedMemberNames(members, event.assignedMemberIds)}
+          </Text>
+        </View>
+
+        {event.notes ? (
+          <Text style={styles.eventNotes}>{event.notes}</Text>
+        ) : null}
+
+        {canManageAlliance ? (
+          <View style={styles.actionRow}>
+            {!completed ? (
+              <>
+                <Pressable
+                  style={[
+                    styles.secondaryButton,
+                    busy && styles.disabledButton,
+                  ]}
+                  onPress={() => clearAssignedMembersForEvent(event.id)}
+                  disabled={busy}
+                >
+                  <Text style={styles.secondaryButtonText}>Clear Members</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.completeButton, busy && styles.disabledButton]}
+                  onPress={() => confirmCompleteEvent(event.id)}
+                  disabled={busy}
+                >
+                  <Text style={styles.completeButtonText}>Complete</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable
+                style={[styles.secondaryButton, busy && styles.disabledButton]}
+                onPress={() => confirmReopenEvent(event.id)}
+                disabled={busy}
+              >
+                <Text style={styles.secondaryButtonText}>Reopen</Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={[styles.deleteButton, busy && styles.disabledButton]}
+              onPress={() => confirmDeleteEvent(event.id)}
+              disabled={busy}
+            >
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <View style={styles.titleCopy}>
+            <Text style={styles.eyebrow}>Alliance Events</Text>
+            <Text style={styles.title}>Event Board</Text>
+            <Text style={styles.subtitle}>
+              Track active alliance events, assigned members, and completed
+              event history.
+            </Text>
+          </View>
+
+          {canManageAlliance ? (
+            <Pressable
+              style={styles.addButton}
+              onPress={() => router.push("/events/new")}
+            >
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
           ) : null}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Active Events</Text>
-            <Text style={styles.sectionCount}>{activeEvents.length}</Text>
+        {!canManageAlliance ? (
+          <View style={styles.permissionCard}>
+            <Text style={styles.permissionTitle}>View-only access</Text>
+            <Text style={styles.permissionText}>
+              Only R4 and R5 members can create or manage events.
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>Loading events...</Text>
+          <Text style={styles.emptyText}>
+            Your alliance event board is being refreshed.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Active Events</Text>
+              <Text style={styles.sectionCount}>{activeEvents.length}</Text>
+            </View>
+
+            {activeEvents.length > 0 ? (
+              activeEvents.map((event) => renderEventCard(event))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No active events</Text>
+                <Text style={styles.emptyText}>
+                  {canManageAlliance
+                    ? "Tap Add to create your first alliance event."
+                    : "R4 and R5 members can create events for the alliance."}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {activeEvents.length > 0 ? (
-            activeEvents.map((event) => (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.eventHeader}>
-                  <View style={styles.eventHeaderText}>
-                    <Text style={styles.eventTitle}>{event.name}</Text>
-                    <Text style={styles.eventMeta}>
-                      {event.type} · {event.date}
-                    </Text>
-                  </View>
-
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>Active</Text>
-                  </View>
-                </View>
-
-                <View style={styles.eventRow}>
-                  <Text style={styles.eventLabel}>Assigned Members</Text>
-                  <Text style={styles.eventValue}>
-                    {getAssignedMemberNames(members, event.assignedMemberIds)}
-                  </Text>
-                </View>
-
-                {event.notes ? (
-                  <Text style={styles.eventNotes}>{event.notes}</Text>
-                ) : null}
-
-                {canManageAlliance ? (
-                  <View style={styles.actionRow}>
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={() => clearAssignedMembersForEvent(event.id)}
-                    >
-                      <Text style={styles.secondaryButtonText}>
-                        Clear Members
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.completeButton}
-                      onPress={() => confirmCompleteEvent(event.id)}
-                    >
-                      <Text style={styles.completeButtonText}>Complete</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.deleteButton}
-                      onPress={() => confirmDeleteEvent(event.id)}
-                    >
-                      <Text style={styles.deleteButtonText}>Delete</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No active events</Text>
-              <Text style={styles.emptyText}>
-                {canManageAlliance
-                  ? "Tap Add to create your first alliance event."
-                  : "R4 and R5 members can create events for the alliance."}
-              </Text>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>History</Text>
+              <Text style={styles.sectionCount}>{completedEvents.length}</Text>
             </View>
-          )}
-        </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>History</Text>
-            <Text style={styles.sectionCount}>{completedEvents.length}</Text>
+            {completedEvents.length > 0 ? (
+              completedEvents.map((event) => renderEventCard(event, true))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No event history yet</Text>
+                <Text style={styles.emptyText}>
+                  Completed events will appear here.
+                </Text>
+              </View>
+            )}
           </View>
-
-          {completedEvents.length > 0 ? (
-            completedEvents.map((event) => (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.eventHeader}>
-                  <View style={styles.eventHeaderText}>
-                    <Text style={styles.eventTitle}>{event.name}</Text>
-                    <Text style={styles.eventMeta}>
-                      {event.type} · {event.date}
-                    </Text>
-                  </View>
-
-                  <View style={styles.completedBadge}>
-                    <Text style={styles.completedBadgeText}>Completed</Text>
-                  </View>
-                </View>
-
-                <View style={styles.eventRow}>
-                  <Text style={styles.eventLabel}>Assigned Members</Text>
-                  <Text style={styles.eventValue}>
-                    {getAssignedMemberNames(members, event.assignedMemberIds)}
-                  </Text>
-                </View>
-
-                {event.notes ? (
-                  <Text style={styles.eventNotes}>{event.notes}</Text>
-                ) : null}
-
-                {canManageAlliance ? (
-                  <View style={styles.actionRow}>
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={() => reopenAllianceEvent(event.id)}
-                    >
-                      <Text style={styles.secondaryButtonText}>Reopen</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.deleteButton}
-                      onPress={() => confirmDeleteEvent(event.id)}
-                    >
-                      <Text style={styles.deleteButtonText}>Delete</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No event history yet</Text>
-              <Text style={styles.emptyText}>
-                Completed events will appear here.
-              </Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-    </RequireActiveAlliance>
+        </>
+      )}
+    </ScrollView>
   );
 }
 
@@ -296,15 +360,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   eyebrow: {
     color: colors.primary,
     fontSize: 13,
-    fontWeight: "900",
-    marginBottom: 8,
+    fontWeight: "800",
+    marginBottom: 6,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
   },
   titleRow: {
     flexDirection: "row",
@@ -516,5 +579,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });

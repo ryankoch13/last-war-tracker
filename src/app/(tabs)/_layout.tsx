@@ -10,6 +10,10 @@ type TabBarIconProps = {
   size: number;
 };
 
+export const unstable_settings = {
+  initialRouteName: "index",
+};
+
 function SettingsButton() {
   return (
     <Pressable
@@ -33,6 +37,7 @@ export default function TabsLayout() {
   return (
     <RequireActiveAlliance>
       <Tabs
+        initialRouteName={unstable_settings.initialRouteName}
         screenOptions={{
           headerShown: true,
           headerTitleStyle: {

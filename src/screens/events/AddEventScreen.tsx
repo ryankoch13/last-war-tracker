@@ -19,7 +19,7 @@ import {
 } from "@/store/allianceStore";
 import { colors } from "@/theme/colors";
 
-const EVENT_TYPES = [
+const EVENT_TYPES: AllianceEventType[] = [
   AllianceEventType.VS,
   AllianceEventType.DesertStorm,
   AllianceEventType.CapitalWar,
@@ -28,8 +28,17 @@ const EVENT_TYPES = [
   AllianceEventType.Custom,
 ];
 
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
+function getLocalDateKey() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function isValidDateKey(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 
 export function AddEventScreen() {
@@ -40,9 +49,10 @@ export function AddEventScreen() {
 
   const [name, setName] = useState("");
   const [type, setType] = useState<AllianceEventType>(AllianceEventType.VS);
-  const [date, setDate] = useState(todayString());
+  const [date, setDate] = useState(getLocalDateKey());
   const [notes, setNotes] = useState("");
   const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const activeMembers = useMemo(() => {
     return members
@@ -61,7 +71,7 @@ export function AddEventScreen() {
     });
   }
 
-  function handleAddEvent() {
+  async function handleAddEvent() {
     if (!canManageAlliance) {
       Alert.alert(
         "Permission required",
@@ -71,24 +81,44 @@ export function AddEventScreen() {
     }
 
     const trimmedName = name.trim();
+    const trimmedDate = date.trim();
 
     if (!trimmedName) {
       Alert.alert("Event name required", "Enter a name for the event.");
       return;
     }
 
-    addAllianceEvent({
-      name: trimmedName,
-      type,
-      date: date.trim() || todayString(),
-      notes: notes.trim(),
-      assignedMemberIds,
-      status: BoardItemStatus.Active,
-      completedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
+    if (!isValidDateKey(trimmedDate)) {
+      Alert.alert(
+        "Invalid date",
+        "Enter the date in YYYY-MM-DD format, like 2026-06-30.",
+      );
+      return;
+    }
 
-    router.back();
+    try {
+      setSaving(true);
+
+      await addAllianceEvent({
+        name: trimmedName,
+        type,
+        date: date.trim() || getLocalDateKey(),
+        notes: notes.trim() || null,
+        assignedMemberIds,
+        status: BoardItemStatus.Active,
+        completedAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+
+      router.back();
+    } catch (error) {
+      Alert.alert(
+        "Could not create event",
+        error instanceof Error ? error.message : "Something went wrong.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
@@ -108,7 +138,7 @@ export function AddEventScreen() {
           <Text style={styles.eyebrow}>R4 / R5 Tools</Text>
           <Text style={styles.title}>Add Event</Text>
           <Text style={styles.subtitle}>
-            Create a new alliance event and assign members who should be
+            Create an alliance event and assign members who should be
             responsible for it.
           </Text>
         </View>
@@ -135,11 +165,12 @@ export function AddEventScreen() {
               <TextInput
                 value={name}
                 onChangeText={setName}
-                placeholder="Alliance Duel Push, Desert Storm, Capital War..."
-                placeholderTextColor={colors.inputPlaceholder}
+                placeholder="Alliance Duel, Desert Storm, train reset..."
+                placeholderTextColor={colors.textMuted}
                 autoCapitalize="words"
                 autoCorrect={false}
                 style={styles.input}
+                editable={!saving}
               />
             </View>
 
@@ -158,6 +189,7 @@ export function AddEventScreen() {
                         selected && styles.typeChipActive,
                       ]}
                       onPress={() => setType(eventType)}
+                      disabled={saving}
                     >
                       <Text
                         style={[
@@ -179,10 +211,11 @@ export function AddEventScreen() {
                 value={date}
                 onChangeText={setDate}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.inputPlaceholder}
+                placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={styles.input}
+                editable={!saving}
               />
             </View>
 
@@ -190,11 +223,7 @@ export function AddEventScreen() {
               <Text style={styles.label}>Assigned Members</Text>
 
               {activeMembers.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.memberPicker}
-                >
+                <View style={styles.memberGrid}>
                   {activeMembers.map((member) => {
                     const selected = assignedMemberIds.includes(member.id);
 
@@ -206,6 +235,7 @@ export function AddEventScreen() {
                           selected && styles.memberChipActive,
                         ]}
                         onPress={() => toggleAssignedMember(member.id)}
+                        disabled={saving}
                       >
                         <Text
                           style={[
@@ -218,7 +248,7 @@ export function AddEventScreen() {
                       </Pressable>
                     );
                   })}
-                </ScrollView>
+                </View>
               ) : (
                 <Text style={styles.emptyText}>
                   Add members before assigning them to events.
@@ -232,15 +262,22 @@ export function AddEventScreen() {
                 value={notes}
                 onChangeText={setNotes}
                 placeholder="Optional notes"
-                placeholderTextColor={colors.inputPlaceholder}
+                placeholderTextColor={colors.textMuted}
                 autoCapitalize="sentences"
                 multiline
                 style={[styles.input, styles.notesInput]}
+                editable={!saving}
               />
             </View>
 
-            <Pressable style={styles.primaryButton} onPress={handleAddEvent}>
-              <Text style={styles.primaryButtonText}>Create Event</Text>
+            <Pressable
+              style={[styles.primaryButton, saving && styles.disabledButton]}
+              onPress={handleAddEvent}
+              disabled={saving}
+            >
+              <Text style={styles.primaryButtonText}>
+                {saving ? "Creating..." : "Create Event"}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -274,10 +311,9 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: colors.primary,
     fontSize: 13,
-    fontWeight: "900",
-    marginBottom: 8,
+    fontWeight: "800",
+    marginBottom: 6,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
   },
   title: {
     color: colors.text,
@@ -322,7 +358,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.text,
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "800",
     marginBottom: 8,
   },
   input: {
@@ -367,8 +403,9 @@ const styles = StyleSheet.create({
   typeChipTextActive: {
     color: "#ffffff",
   },
-  memberPicker: {
-    paddingRight: 20,
+  memberGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
   memberChip: {
     minHeight: 38,
@@ -379,6 +416,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 14,
     marginRight: 8,
+    marginBottom: 8,
   },
   memberChipActive: {
     borderColor: colors.primary,
@@ -424,5 +462,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
