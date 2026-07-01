@@ -75,6 +75,7 @@ export type DailyMemberStat = {
   vsScore: number;
   donations: number;
   createdAt: string;
+  notes: string | null;
   updatedAt?: string | null;
 };
 
@@ -141,7 +142,7 @@ type AllianceStoreState = {
   ) => Promise<void>;
   joinAllianceAndClaimMember: (
     inviteCode: string,
-    memberName: string,
+    memberId: string,
   ) => Promise<void>;
   clearActiveAlliance: () => void;
   clearError: () => void;
@@ -768,111 +769,30 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
     }
   },
 
-  joinAllianceAndClaimMember: async (inviteCode, memberName) => {
-    const trimmedInviteCode = inviteCode.trim().toUpperCase();
-    const trimmedMemberName = memberName.trim();
-
-    if (!trimmedInviteCode) {
-      throw new Error("Invite code is required.");
-    }
-
-    if (!trimmedMemberName) {
-      throw new Error("Member name is required.");
-    }
-
+  joinAllianceAndClaimMember: async (inviteCode, memberId) => {
     set({ loading: true, error: null });
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) throw userError;
-
-      if (!user) {
-        throw new Error("You must be signed in to join an alliance.");
-      }
-
-      const { data: allianceRow, error: allianceError } = await supabase
-        .from("alliances")
-        .select("*")
-        .eq("invite_code", trimmedInviteCode)
-        .maybeSingle();
-
-      if (allianceError) throw allianceError;
-
-      if (!allianceRow) {
-        throw new Error("No alliance found for that invite code.");
-      }
-
-      const { error: metadataError } = await supabase.auth.updateUser({
-        data: {
-          member_name: trimmedMemberName,
+      const { data: allianceId, error } = await supabase.rpc(
+        "join_alliance_and_claim_member",
+        {
+          invite_code_input: inviteCode,
+          member_id_input: memberId,
         },
-      });
+      );
 
-      if (metadataError) throw metadataError;
+      if (error) {
+        throw error;
+      }
 
-      const { data: allianceUserRow, error: allianceUserError } = await supabase
-        .from("alliance_users")
-        .upsert(
-          {
-            alliance_id: allianceRow.id,
-            user_id: user.id,
-            role: AllianceRole.R1,
-          },
-          {
-            onConflict: "alliance_id,user_id",
-          },
-        )
-        .select("*")
-        .single();
+      set({ activeAllianceId: allianceId });
 
-      if (allianceUserError) throw allianceUserError;
-
-      await supabase
-        .from("members")
-        .delete()
-        .eq("alliance_id", allianceRow.id)
-        .eq("user_id", user.id);
-
-      const { error: memberError } = await supabase.from("members").insert({
-        alliance_id: allianceRow.id,
-        user_id: user.id,
-        display_name: trimmedMemberName,
-        role: AllianceRole.R1,
-        power: 0,
-        level: null,
-        notes: null,
-        is_active: true,
-      });
-
-      if (memberError) throw memberError;
-
-      const activeAlliance = mapAlliance(allianceRow);
-      const allianceUser = mapAllianceUser(allianceUserRow);
-      const allianceData = await loadAllianceData(activeAlliance.id);
-
-      set({
-        activeAllianceId: activeAlliance.id,
-        activeAlliance,
-        allianceUser,
-        ...allianceData,
-        loading: false,
-        hasLoaded: true,
-        error: null,
-      });
+      await get().loadActiveAlliance();
     } catch (error) {
-      console.error("JOIN ALLIANCE ERROR:", error);
-
       const message =
-        error instanceof Error ? error.message : "Failed to join alliance.";
+        error instanceof Error ? error.message : "Could not join alliance.";
 
-      set({
-        error: message,
-        loading: false,
-      });
+      set({ error: message, loading: false, hasLoaded: true });
 
       throw error;
     }
