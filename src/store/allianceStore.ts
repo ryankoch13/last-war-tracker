@@ -182,6 +182,10 @@ type AllianceStoreState = {
     eventId: string,
     updates: Partial<AllianceEvent>,
   ) => Promise<void>;
+  updateOwnMemberProgress: (
+    memberId: string,
+    updates: Pick<AllianceMember, "power" | "level">,
+  ) => Promise<void>;
   completeAllianceEvent: (eventId: string) => Promise<void>;
   reopenAllianceEvent: (eventId: string) => Promise<void>;
   deleteAllianceEvent: (eventId: string) => Promise<void>;
@@ -958,6 +962,47 @@ export const useAllianceStore = create<AllianceStoreState>((set, get) => ({
       return {
         members,
         membersWithStats: buildMembersWithStats(members, dailyStats),
+      };
+    });
+  },
+
+  updateOwnMemberProgress: async (memberId, updates) => {
+    const targetMember = get().members.find((member) => member.id === memberId);
+    const currentUserId = get().allianceUser?.userId;
+
+    if (!targetMember || targetMember.userId !== currentUserId) {
+      throw new Error("You can only update your own power and HQ level.");
+    }
+
+    const { data: memberRow, error } = await supabase.rpc(
+      "update_own_member_progress",
+      {
+        p_member_id: memberId,
+        p_power: Number(updates.power ?? 0),
+        p_level: updates.level ?? null,
+      },
+    );
+
+    if (error) {
+      console.error("UPDATE OWN MEMBER PROGRESS ERROR:", error);
+      throw error;
+    }
+
+    const updatedMember = mapMember(memberRow);
+
+    set((state) => {
+      const members = sortMembers(
+        state.members.map((member) =>
+          member.id === memberId ? updatedMember : member,
+        ),
+      );
+
+      return {
+        members,
+        membersWithStats: buildMembersWithStats(
+          members,
+          state.dailyStats ?? [],
+        ),
       };
     });
   },

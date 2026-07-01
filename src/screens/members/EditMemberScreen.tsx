@@ -14,12 +14,9 @@ import {
 
 import { RequireActiveAlliance } from "@/components/RequireActiveAlliance";
 import { useCanManageAlliance } from "@/hooks/useActiveAlliance";
-import { AllianceMember } from "@/types/alliance";
+import type { AllianceMember } from "@/types/alliance";
 import { AppButton } from "../../components/AppButton";
-import {
-  AllianceRole,
-  useAllianceStore
-} from "../../store/allianceStore";
+import { AllianceRole, useAllianceStore } from "../../store/allianceStore";
 import { colors } from "../../theme/colors";
 
 const VALID_ROLES: AllianceRole[] = [
@@ -29,11 +26,6 @@ const VALID_ROLES: AllianceRole[] = [
   AllianceRole.R4,
   AllianceRole.R5,
 ];
-
-type UpdateMemberRoleFn = (
-  memberId: string,
-  role: AllianceRole,
-) => Promise<void>;
 
 export function EditMemberScreen() {
   const router = useRouter();
@@ -51,18 +43,25 @@ export function EditMemberScreen() {
     return (state.members ?? []).find((member) => member.id === memberId);
   });
 
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
   const canManageAlliance = useCanManageAlliance();
 
   const addMember = useAllianceStore((state) => state.addMember);
   const updateMember = useAllianceStore((state) => state.updateMember);
-
-  const updateMemberRole = useAllianceStore(
-    (state) =>
-      (state as unknown as { updateMemberRole?: UpdateMemberRoleFn })
-        .updateMemberRole,
+  const updateMemberRole = useAllianceStore((state) => state.updateMemberRole);
+  const updateOwnMemberProgress = useAllianceStore(
+    (state) => state.updateOwnMemberProgress,
   );
 
   const isEditing = Boolean(memberId);
+
+  const isOwnMember = Boolean(
+    existingMember?.userId && existingMember.userId === allianceUser?.userId,
+  );
+
+  const canUseScreen = canManageAlliance || (isEditing && isOwnMember);
+  const canEditIdentityFields = canManageAlliance;
+  const canEditProgressFields = canManageAlliance || isOwnMember;
 
   const [name, setName] = useState(existingMember?.name ?? "");
   const [role, setRole] = useState<AllianceRole>(
@@ -85,8 +84,13 @@ export function EditMemberScreen() {
 
   const buttonTitle = useMemo(() => {
     if (saving) return "Saving...";
+
+    if (!canManageAlliance && isOwnMember) {
+      return "Update My Info";
+    }
+
     return isEditing ? "Save Changes" : "Create Member";
-  }, [isEditing, saving]);
+  }, [canManageAlliance, isEditing, isOwnMember, saving]);
 
   async function save() {
     if (saving) return;
@@ -99,10 +103,18 @@ export function EditMemberScreen() {
       return;
     }
 
+    if (!canUseScreen) {
+      Alert.alert(
+        "Permission required",
+        "You can only update your own power and HQ level.",
+      );
+      return;
+    }
+
     const trimmedName = name.trim();
     const trimmedNotes = notes.trim();
 
-    if (!trimmedName) {
+    if (canManageAlliance && !trimmedName) {
       Alert.alert("Missing name", "Add a member name before saving.");
       return;
     }
@@ -136,22 +148,28 @@ export function EditMemberScreen() {
       if (memberId && existingMember) {
         const roleChanged = role !== existingMember.role;
 
-        if (canManageAlliance && roleChanged && !updateMemberRole) {
-          await updateMember(memberId, {
-            ...basePayload,
-            role,
-          });
-        } else {
+        if (canManageAlliance) {
           await updateMember(memberId, basePayload);
 
-          if (canManageAlliance && roleChanged && updateMemberRole) {
+          if (roleChanged) {
             await updateMemberRole(memberId, role);
           }
+        } else if (isOwnMember) {
+          await updateOwnMemberProgress(memberId, {
+            power: parsedPower,
+            level: parsedLevel,
+          });
+        } else {
+          throw new Error("You can only update your own member profile.");
         }
       } else {
+        if (!canManageAlliance) {
+          throw new Error("Only R4 and R5 members can add alliance members.");
+        }
+
         await addMember({
           name: trimmedName,
-          role: canManageAlliance ? role : AllianceRole.R1,
+          role,
           power: parsedPower,
           level: parsedLevel,
           notes: trimmedNotes,
@@ -172,21 +190,6 @@ export function EditMemberScreen() {
     }
   }
 
-  if (!canManageAlliance) {
-    return (
-      <RequireActiveAlliance>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>Permission required</Text>
-          <Text style={styles.emptyText}>
-            Only R4 and R5 members can edit alliance members.
-          </Text>
-
-          <AppButton title="Go Back" onPress={() => router.back()} />
-        </View>
-      </RequireActiveAlliance>
-    );
-  }
-
   if (isEditing && !existingMember) {
     return (
       <RequireActiveAlliance>
@@ -195,6 +198,22 @@ export function EditMemberScreen() {
           <Text style={styles.emptyText}>
             This member may have been deleted, or the route may be missing a
             memberId.
+          </Text>
+
+          <AppButton title="Go Back" onPress={() => router.back()} />
+        </View>
+      </RequireActiveAlliance>
+    );
+  }
+
+  if (!canUseScreen) {
+    return (
+      <RequireActiveAlliance>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Permission required</Text>
+          <Text style={styles.emptyText}>
+            You can only update your own power, HQ level, VS score, and
+            donations.
           </Text>
 
           <AppButton title="Go Back" onPress={() => router.back()} />
@@ -221,11 +240,15 @@ export function EditMemberScreen() {
             <Text style={styles.eyebrow}>
               {isEditing ? "Edit Member" : "New Member"}
             </Text>
+
             <Text style={styles.title}>
               {isEditing ? (existingMember?.name ?? "Member") : "Add Member"}
             </Text>
+
             <Text style={styles.subtitle}>
-              Update member details, HQ level, power, notes, and rank access.
+              {canManageAlliance
+                ? "Update member details, HQ level, power, notes, and rank access."
+                : "Update your own HQ level and power."}
             </Text>
           </View>
 
@@ -237,6 +260,7 @@ export function EditMemberScreen() {
               placeholder="Member name"
               autoCapitalize="words"
               autoCorrect={false}
+              editable={canEditIdentityFields}
             />
 
             {canManageAlliance ? (
@@ -251,6 +275,7 @@ export function EditMemberScreen() {
               onChangeText={setPower}
               keyboardType="number-pad"
               placeholder="0"
+              editable={canEditProgressFields}
             />
 
             <Field
@@ -259,6 +284,7 @@ export function EditMemberScreen() {
               onChangeText={setLevel}
               keyboardType="number-pad"
               placeholder="0"
+              editable={canEditProgressFields}
             />
 
             <Field
@@ -269,13 +295,15 @@ export function EditMemberScreen() {
               autoCapitalize="sentences"
               multiline
               style={styles.notesInput}
+              editable={canEditIdentityFields}
             />
 
             {!canManageAlliance ? (
               <View style={styles.permissionCard}>
-                <Text style={styles.permissionTitle}>Rank locked</Text>
+                <Text style={styles.permissionTitle}>Limited editing</Text>
                 <Text style={styles.permissionText}>
-                  Only R4 and R5 members can change another member&apos;s rank.
+                  You can update your own power and HQ level. R4 and R5 members
+                  manage names, notes, ranks, and roster changes.
                 </Text>
               </View>
             ) : null}
@@ -346,14 +374,15 @@ type FieldProps = ComponentProps<typeof TextInput> & {
   label: string;
 };
 
-function Field({ label, style, ...props }: FieldProps) {
+function Field({ label, style, editable = true, ...props }: FieldProps) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.label}>{label}</Text>
 
       <TextInput
         placeholderTextColor={colors.inputPlaceholder}
-        style={[styles.input, style]}
+        editable={editable}
+        style={[styles.input, !editable && styles.inputDisabled, style]}
         {...props}
       />
     </View>
@@ -433,6 +462,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 48,
     fontSize: 16,
+  },
+  inputDisabled: {
+    opacity: 0.65,
   },
   notesInput: {
     minHeight: 96,

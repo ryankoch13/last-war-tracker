@@ -21,7 +21,10 @@ const ADD_DAILY_STATS_ROUTE = "/(tabs)/members/add-daily-stats" as const;
 
 export function MemberDetailsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ memberId?: string | string[] }>();
+
+  const params = useLocalSearchParams<{
+    memberId?: string | string[];
+  }>();
 
   const memberId = Array.isArray(params.memberId)
     ? params.memberId[0]
@@ -29,7 +32,9 @@ export function MemberDetailsScreen() {
 
   const members = useAllianceStore((state) => state.members ?? []);
   const dailyStats = useAllianceStore((state) => state.dailyStats ?? []);
+  const allianceUser = useAllianceStore((state) => state.allianceUser);
   const deleteMember = useAllianceStore((state) => state.deleteMember);
+
   const canManageAlliance = useCanManageAlliance();
 
   const member = useMemo(() => {
@@ -37,6 +42,14 @@ export function MemberDetailsScreen() {
 
     return members.find((item) => item.id === memberId);
   }, [members, memberId]);
+
+  const isOwnMember = Boolean(
+    member?.userId &&
+    allianceUser?.userId &&
+    member.userId === allianceUser.userId,
+  );
+
+  const canUpdateThisMemberStats = canManageAlliance || isOwnMember;
 
   const memberDailyStats = useMemo(() => {
     if (!memberId) return [];
@@ -100,10 +113,10 @@ export function MemberDetailsScreen() {
   function goToEditMember() {
     if (!memberId) return;
 
-    if (!canManageAlliance) {
+    if (!canManageAlliance && !isOwnMember) {
       Alert.alert(
         "Permission required",
-        "Only R4 and R5 members can edit alliance members.",
+        "You can only update your own member info.",
       );
       return;
     }
@@ -129,6 +142,14 @@ export function MemberDetailsScreen() {
 
   function goToAddDailyStats(date?: string) {
     if (!memberId) return;
+
+    if (!canUpdateThisMemberStats) {
+      Alert.alert(
+        "Permission required",
+        "You can only update your own VS score and donations.",
+      );
+      return;
+    }
 
     router.push({
       pathname: ADD_DAILY_STATS_ROUTE,
@@ -184,6 +205,7 @@ export function MemberDetailsScreen() {
             This member could not be loaded. They may have been deleted, or the
             route may be missing a memberId.
           </Text>
+
           <AppButton title="Go Back" onPress={() => router.back()} />
         </View>
       </RequireActiveAlliance>
@@ -214,11 +236,7 @@ export function MemberDetailsScreen() {
             <MetaItem label="Power" value={formatNumber(member.power)} />
             <MetaItem
               label="HQ Level"
-              value={member.level === null ? "—" : String(member.level)}
-            />
-            <MetaItem
-              label="Status"
-              value={member.isActive ? "Active" : "Inactive"}
+              value={member.level ? `HQ ${member.level}` : "Not set"}
             />
           </View>
 
@@ -253,17 +271,31 @@ export function MemberDetailsScreen() {
         </View>
 
         <View style={styles.actionsCard}>
-          {canManageAlliance ? (
-            <>
-              <AppButton
-                title="Add Daily Stats"
-                onPress={() => goToAddDailyStats()}
-              />
-              <AppButton title="Edit Member" onPress={goToEditMember} />
-            </>
+          {canUpdateThisMemberStats ? (
+            <AppButton
+              title="Add Daily Stats"
+              onPress={() => goToAddDailyStats()}
+            />
           ) : null}
+
           <AppButton title="View Stats" onPress={goToStats} />
+
+          {canManageAlliance ? (
+            <AppButton title="Edit Member" onPress={goToEditMember} />
+          ) : isOwnMember ? (
+            <AppButton title="Update My Info" onPress={goToEditMember} />
+          ) : null}
         </View>
+
+        {!canManageAlliance && !isOwnMember ? (
+          <View style={styles.permissionCard}>
+            <Text style={styles.permissionTitle}>View-only member</Text>
+            <Text style={styles.permissionText}>
+              You can view this member&apos;s stats, but only R4/R5 members or
+              the linked member can update this profile.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -281,7 +313,7 @@ export function MemberDetailsScreen() {
 
                 return (
                   <Pressable
-                    key={`${getStatMemberId(stat)}-${date}`}
+                    key={stat.id}
                     style={styles.statRow}
                     onPress={() => goToAddDailyStats(date)}
                   >
@@ -308,15 +340,19 @@ export function MemberDetailsScreen() {
             <View style={styles.emptyCard}>
               <Text style={styles.emptyCardTitle}>No stats yet</Text>
               <Text style={styles.emptyCardText}>
-                Add this member&apos;s daily VS score and donations to start
-                tracking progress.
+                {canUpdateThisMemberStats
+                  ? "Add this member's daily VS score and donations to start tracking progress."
+                  : "Daily stats will appear here once they are added."}
               </Text>
-              <Pressable
-                style={styles.emptyAction}
-                onPress={() => goToAddDailyStats()}
-              >
-                <Text style={styles.emptyActionText}>Add Daily Stats</Text>
-              </Pressable>
+
+              {canUpdateThisMemberStats ? (
+                <Pressable
+                  style={styles.emptyAction}
+                  onPress={() => goToAddDailyStats()}
+                >
+                  <Text style={styles.emptyActionText}>Add Daily Stats</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
         </View>
@@ -370,9 +406,7 @@ function getStatDate(stat: any) {
 }
 
 function getStatVsScore(stat: any) {
-  return Number(
-    stat.vsScore ?? stat.vs_score ?? stat.vsScore ?? stat.versus_points ?? 0,
-  );
+  return Number(stat.vsScore ?? stat.vs_score ?? stat.versus_points ?? 0);
 }
 
 function getStatDonations(stat: any) {
@@ -452,6 +486,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     gap: 14,
+    paddingBottom: 32,
   },
   headerCard: {
     backgroundColor: colors.surface,
@@ -572,6 +607,24 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: 14,
     gap: 10,
+  },
+  permissionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 5,
+  },
+  permissionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  permissionText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
   },
   section: {
     gap: 10,
